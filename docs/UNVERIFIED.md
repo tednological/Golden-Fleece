@@ -24,7 +24,10 @@ Initial register (Stage 0). Each item names the confirming step. Items move out 
 | R16 | Vest fabric over the radar acts as a radome without false targets from flapping | datasheet radome warning says it may not | Ride test; blockage heuristic false-alarm rate |
 | R17 | RESP 4 (UART error) rate at the chosen baud over the actual cabling | none | Probe |
 | R18 | Header-arrival timestamp jitter through the USB bridge < 3 ms p99 | typical | Probe |
-| R19 | Relative speeds above 27.8 m/s alias (wrong sign possible) | datasheet p.9 | Accepted limitation; no test planned |
+| R19 | Relative speeds above 27.8 m/s alias (wrong sign possible) | datasheet p.9 | Accepted limitation (team answer 10); no test planned |
+| R20 | Wheel micro-Doppler (wheel-top returns at ~2x vehicle speed, contact patches at road speed) appears in PDAT as modelled in the simulator | automotive-radar experience, not the datasheet | Rides: `tracker.consistency_*` and `clutter.phantom_filter` are harmless if absent |
+| R21 | Range aliasing: a strong car beyond the RRAI range wraps to a short apparent range with the right Doppler | datasheet p.9 "false reflections" | Probe magnitude-vs-range log with a reflector; recalibrate `clutter.alias_check.c_alias_db` (sim value 63 dB assumes the sim's magnitude scale) |
+| R22 | The sensor's magnitude scale (dB x100) is comparable to the simulator's (10 log RCS - 40 log r + 80) | assumption for the alias check only | Probe |
 
 ## IMU (BNO085)
 
@@ -37,6 +40,8 @@ Initial register (Stage 0). Each item names the confirming step. Items move out 
 | I5 | Gyro bias stability adequate for Δψ over track lifetimes (< 0.5°/s drift) | Static log |
 | I6 | INT-edge timestamping is available through the library | Stage 5 (falls back to read-time stamps) |
 | I7 | SPI0 enabled (`dtparam=spi=on`) and Blinka works on this Pi 5 kernel | Stage 5 checklist |
+| I8 | Wiring CS=D8 (CE0), INT=D25, RESET=D24 as in `pipeline.yaml: imu.pins` | assumed | Bring-up |
+| I9 | The library's `_readings` identity change is a reliable new-sample detector (no per-sample timestamps in the library) | code reading of adafruit_bno08x 1.x | `tools/bno085_probe.py` rate check |
 
 ## MCU link and GPIO
 
@@ -46,7 +51,9 @@ Initial register (Stage 0). Each item names the confirming step. Items move out 
 | M2 | MCU-side pull-down defines idle; an unpowered Pi reads idle | Bench |
 | M3 | CPX USB CDC enumerates with a stable by-id path and survives Pi USB re-enumeration | Stage 5 |
 | M4 | STATUS round trip < 10 ms (latency measurement resolution) | Stage 5 |
-| M5 | MCU powered independently of the Pi (precondition for brownout announcement) | Team hardware decision |
+| M5 | **Not met (team answer 6):** the MCU is powered through the Pi, so a Pi brownout silences both and cannot be announced. Documented limitation (ICD §9.2). | Team hardware decision |
+| M7 | The alert travels on the UART (team answer 5): its failure domain is the serial link's; a stuck assertion is bounded by the 300 ms stale rule | ICD §5 | Stage 5 bench with `kill -STOP` |
+| M8 | ATmega328P-XMINI mEDBG CDC bridge sustains 57600 8N1 with ≤ 96-byte lines at up to ~40 lines/s | assumption | Stage 5 bench (`STAT` round trips, CRC error count) |
 | M6 | Under `PI_POLLS`, a passive tap of radar TX carries nothing during a Pi hang | By construction; documented in ICD |
 
 ## Power and platform

@@ -1,0 +1,31 @@
+# Golden Fleece pipeline — systemd unit (opt-in deployment; correctness does not depend on it)
+# Install: sudo cp deploy/goldenfleece.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now goldenfleece
+[Unit]
+Description=Golden Fleece rear-radar warning pipeline
+After=network.target dev-serial-by\x2did.device
+StartLimitIntervalSec=0
+
+[Service]
+Type=notify
+NotifyAccess=main
+User=ted
+Group=ted
+SupplementaryGroups=dialout gpio spi
+WorkingDirectory=/home/ted/golden_fleece
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/ted/golden_fleece/.venv/bin/python /home/ted/golden_fleece/tools/run_pipeline.py --config /home/ted/golden_fleece/config --deploy
+# WATCHDOG=1 is sent from the pipeline loop on progress only (rate-limited to 0.5 s); 2 s tolerates a
+# stalled radar (health ticks still count as progress) but not a stalled loop.
+WatchdogSec=2
+Restart=always
+RestartSec=1
+TimeoutStopSec=5
+# Priority (opt-in): SCHED_FIFO is requested by --deploy; allow it without root.
+AmbientCapabilities=CAP_SYS_NICE
+Nice=-10
+# Dedicated core (opt-in, pair with isolcpus=3 on the kernel command line):
+#CPUAffinity=3
+LimitRTPRIO=50
+
+[Install]
+WantedBy=multi-user.target

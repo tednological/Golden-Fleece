@@ -13,12 +13,11 @@ DOCS = Path(__file__).resolve().parent.parent / "docs"
 CONFIG = Path(__file__).resolve().parent.parent / "config"
 
 THREAD_ALLOWED = {
-    "l01_radar_data_input/driver.py",
-    "l02_imu_data_input/bno085_spi.py",
-    "l10_mcu_link/link.py",
-    "orchestrator/recording.py",
-    "orchestrator/power_monitor.py",
+    "l10_mcu_link/link.py",            # the transport half of l10
+    "orchestrator/recording.py",       # the recording writer
+    "orchestrator/power_monitor.py",   # power-flag adapter thread
 }
+THREAD_ALLOWED_DIRS = ("l01_radar_data_input/", "l02_imu_data_input/")   # adapter layers
 
 
 def _py_files(root: Path):
@@ -75,7 +74,7 @@ def test_inv5_threading_only_in_adapters():
         src = p.read_text()
         uses = re.search(r"^\s*(import|from)\s+(threading|queue|concurrent|asyncio|multiprocessing)\b", src, re.M)
         if uses:
-            assert rel in THREAD_ALLOWED, f"{rel} uses {uses.group(2)} but is not an adapter"
+            assert rel in THREAD_ALLOWED or rel.startswith(THREAD_ALLOWED_DIRS), f"{rel} uses {uses.group(2)} but is not an adapter"
     for rel in THREAD_ALLOWED:
         pass  # files may not exist yet in early stages
 
@@ -118,3 +117,19 @@ def test_inv3_no_world_frames_in_package():
         src = p.read_text()
         for name in ("\"world\"", "'world'", "\"odom\"", "'odom'", "\"bike\"", "'bike'"):
             assert name not in src, f"{_rel(p)} mentions frame {name}"
+
+
+def test_inv6_heartbeat_built_only_by_the_pipeline_loop():
+    """No independent heartbeat timer: send_heartbeat is called from the orchestrator loop only, and the
+    link module owns no Timer."""
+    callers = []
+    for p in _py_files(PKG):
+        rel = _rel(p)
+        src = p.read_text()
+        if "send_heartbeat(" in src and "def send_heartbeat" not in src:
+            callers.append(rel)
+        if rel.startswith("l10_mcu_link/"):
+            assert "Timer(" not in src and "sched" not in src, rel
+    assert set(callers) == {"orchestrator/runner.py"}, callers
+    runner = (PKG / "orchestrator" / "runner.py").read_text()
+    assert "WATCHDOG" not in runner.split("def _watchdog")[0] or "notifier.watchdog()" in runner   # watchdog only via _watchdog on progress

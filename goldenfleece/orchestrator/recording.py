@@ -7,7 +7,7 @@ Format: JSON lines (stdlib only).  First record is the session header.
 
 Record kinds:
   hdr   {v, t_wall, t0, config_summary, firmware, git, note}
-  rf    raw radar frame  {t, fn, gap, rspi, rrai, cap, seq, tg: [[distance_cm, speed_raw, angle_raw, magnitude_raw], ...]}
+  rf    raw radar frame  {t, fn, gap, rspi, rrai, cap, seq, tg: [[wire fields of RawRadarTarget in declaration order], ...]}
   imu   raw IMU sample   {t, k2: g|a|q, v: [...], seq}
   hev   health event     {t, bit, on, src, det}
   cmd   decision         {t, seq, lvl, side, bkt, hs, bits, alert}
@@ -18,6 +18,7 @@ Record kinds:
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import queue
 import threading
@@ -37,7 +38,7 @@ def rec_header(t0: float, config_summary: Dict[str, Any], firmware: str = "", gi
 
 def rec_radar(f: RawRadarFrame) -> Dict[str, Any]:
     return {"k": "rf", "t": f.t_header, "fn": f.frame_number, "gap": f.gap, "rspi": f.rspi, "rrai": f.rrai, "cap": f.cap_hit,
-            "seq": f.source_seq, "tg": [[t.distance_cm, t.speed_raw, t.angle_raw, t.magnitude_raw] for t in f.targets]}
+            "seq": f.source_seq, "tg": [list(dataclasses.astuple(t)) for t in f.targets]}
 
 
 def rec_imu(s: RawImuSample) -> Dict[str, Any]:

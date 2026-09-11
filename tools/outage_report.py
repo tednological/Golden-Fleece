@@ -63,7 +63,8 @@ def analyse(path: Path | str) -> SessionReport:
     for r in read_recording(path):
         k = r.get("k")
         t = float(r.get("t", t_last))
-        t_last = max(t_last, t)
+        if k in ("rf", "imu", "hev", "cmd", "pwr"):
+            t_last = max(t_last, t)
         if k == "hdr":
             t0 = float(r.get("t0", 0.0))
         elif k == "rf":

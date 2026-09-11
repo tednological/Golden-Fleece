@@ -10,6 +10,8 @@ register:
   pdat_cap:                { tag: nominal,     filled_by: "tools/kld7_probe.py confirms 12" }
   kld7_firmware_version:   { tag: nominal,     filled_by: "read on first connect; recorded in every session header" }
   threat_thresholds:       { tag: unvalidated, filled_by: "simulator tuning, then rides" }
+  alias_check_c_alias_db:  { tag: unvalidated, filled_by: "tools/kld7_probe.py magnitude-vs-range log with a known reflector" }
+  consistency_check:       { tag: unvalidated, filled_by: "rides: confirm wheel micro-Doppler appears in PDAT as modelled" }
   policy_thresholds:       { tag: unvalidated, filled_by: "simulator tuning, then rides" }
   blockage_thresholds:     { tag: unvalidated, filled_by: "simulator open-road false-alarm rate, then rides" }
   heartbeat_timing:        { tag: unvalidated, filled_by: "ICD proposal; Stage 5 bench" }
@@ -60,6 +62,9 @@ clutter:
   pass_receding_movers: true         # design decision left configurable (plan §4.6)
   saturation_window_s: 1.0
   saturation_fraction: 0.5
+  alias_check:                       # range-aliased returns (beyond RRAI range) are far too weak for their apparent range
+    enabled: true
+    c_alias_db: 63.0                 # reject if magnitude_db < c_alias - 40 log10(r).  UNVALIDATED: recalibrate from probe magnitude-vs-range data
 
 tracker:
   cluster_dr_m: 2.0
@@ -69,8 +74,9 @@ tracker:
   sigma_r_meas_m: 0.25               # 30 cm bins
   sigma_rdot_meas_mps: 0.25          # ~1 bin
   sigma_az_meas_rad: 0.035           # 1 deg quantisation + phase noise (2 deg)
-  q_accel_mps2: 2.5                  # range-rate process noise (m/s^2)
-  q_az_rate_rad_s: 0.05
+  q_accel_mps2: 1.5                  # sqrt of the acceleration spectral density (continuous white-noise-acceleration model)
+  q_az_rate_rad_s: 0.3               # azimuth random-walk density; passing cars sweep azimuth quickly
+  az_var_floor_factor: 1.0           # azimuth variance never below (sigma_az_meas^2 * factor): keeps the gain >= 0.5 for sweeping targets
   init_sigma_rdot_mps: 1.0
   init_sigma_az_rad: 0.06
   confirm_approaching: [3, 4]        # M of N
@@ -82,6 +88,12 @@ tracker:
   coast_unexplained_q_accel_mps2: 8.0
   fov_pass_hold_s: 1.0
   max_tracks: 24
+  consistency_min_samples: 6         # range trend vs range-rate check (wheel micro-Doppler phantoms); no threat before it has run once
+  consistency_tol_mps: 2.5           # ~2.5 sigma of the LS slope noise with 30 cm range bins over 0.3 s
+  consistency_tol_frac: 0.3
+  consistency_strikes: 3
+  reacquire_dr_m: 3.0                # absolute gates for re-acquiring a coasting track (its covariance is inflated by design)
+  reacquire_drdot_mps: 3.0
 
 threat:
   k_sigma: 2.0
@@ -105,7 +117,8 @@ policy:
 
 blockage:
   enabled: true
-  min_silent_s: 5.0                  # in motion, no raw targets and no ego inliers for this long -> RADAR_POSSIBLY_BLOCKED (advisory)
+  min_silent_s: 5.0                  # in motion, ~no raw targets and no ego inliers for this long -> RADAR_POSSIBLY_BLOCKED (advisory)
+  max_mean_targets_per_frame: 0.15   # tolerated noise false alarms while blocked
 
 link:
   port: /dev/serial/by-id/usb-ATMEL_mEDBG_CMSIS-DAP_ATML2523052700013867-if01

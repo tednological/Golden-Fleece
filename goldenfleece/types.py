@@ -248,6 +248,7 @@ class Track:
     last_class: DetectionClass
     n_merged_measurements: int
     closing: bool                # r_dot < -blind band at last update / prediction
+    kinematic_consistent: bool   # range trend agrees with range-rate (wheel micro-Doppler phantoms fail this)
 
 
 @dataclass(frozen=True)

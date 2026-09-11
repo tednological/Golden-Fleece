@@ -51,7 +51,7 @@ class RadarModelParams:
     silence_t_start: Optional[float] = None   # sensor stops answering (RADAR_SILENT)
     silence_t_end: Optional[float] = None
     range_wrap: bool = True
-    calib_db: float = 85.0
+    calib_db: float = 80.0     # cars (10 m^2) detectable to ~32 m, persons (1 m^2) to ~18 m: datasheet typical 30 / 15 m
     sidelobe_db: float = -15.0
     seed: int = 0
     max_targets: int = 12
@@ -111,6 +111,7 @@ class RadarModel:
         self.r_res = RANGE_RES_M[params.rrai]
         self.frame_counter = 0
         self.seq = 0
+        self._last_emitted_fn = None
 
     # -- helpers ---------------------------------------------------------------------------
     def _vehicle_points(self, t: float, st: RiderState):
@@ -278,7 +279,9 @@ class RadarModel:
         if silent or gap:
             return None, truth
         self.seq += 1
+        gap_n = 0 if self._last_emitted_fn is None else max(0, fn - self._last_emitted_fn - 1)
+        self._last_emitted_fn = fn
         t_header = t_mid + self.T / 2 + p.sensor_delay_s + float(self.rng.uniform(0, p.usb_jitter_s))
-        frame = RawRadarFrame(t_header=t_header, frame_number=fn, gap=0, rspi=p.rspi, rrai=p.rrai,
+        frame = RawRadarFrame(t_header=t_header, frame_number=fn, gap=gap_n, rspi=p.rspi, rrai=p.rrai,
                               targets=tuple(raw), cap_hit=len(raw) >= p.max_targets, source_seq=self.seq)
         return frame, truth

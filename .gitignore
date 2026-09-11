@@ -1,0 +1,22 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.hypothesis/
+recordings/
+*.jsonl
+*.jsonl.gz
+# pre-existing, not part of this package
+run.sh
+docs/*.pdf
+1_radar_data_input/
+2_imu_data_input/
+3_radar_decode/
+4_imu_decode/
+5_ego_motion/
+6_clutter_rejection/
+7_tracking/
+8_threat/
+9_warning_policy/
+10_mcu_link/
+11_web_app/

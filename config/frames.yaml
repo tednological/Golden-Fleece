@@ -1,0 +1,13 @@
+version: 1
+root: radar
+frames:
+  - name: radar
+    parent: null
+    source: definition
+    note: "+X = boresight (rearward). +Y = Z x X = RIDER'S RIGHT. +Z = up. Origin: RX antenna phase centre."
+  - name: imu
+    parent: radar
+    t_xyz: [0.0, 0.0, 0.0]          # metres
+    q_wxyz: [1.0, 0.0, 0.0, 0.0]
+    source: nominal
+    note: "axis-aligned mount; expect a signed permutation. Replace after the six-orientation static test."

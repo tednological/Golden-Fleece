@@ -1,0 +1,136 @@
+version: 1
+allow_unmeasured: true     # dev mode: start with null/placeholder register values and log loudly.  Set false for rides.
+
+# ---- §12.3 unmeasured-parameters register: every placeholder carries a tag ----------------------
+register:
+  frame_duration_s:        { tag: nominal,     filled_by: "tools/kld7_probe.py" }
+  sensor_delay_s:          { tag: nominal,     filled_by: "tools/kld7_probe.py timing statistics", required: true }
+  usb_latency_s:           { tag: unvalidated, filled_by: "tools/kld7_probe.py" }
+  doppler_blind_band_mps:  { tag: unvalidated, filled_by: "bench: reflector at controlled speeds (one bin = 0.217 m/s at RSPI 3)" }
+  pdat_cap:                { tag: nominal,     filled_by: "tools/kld7_probe.py confirms 12" }
+  kld7_firmware_version:   { tag: nominal,     filled_by: "read on first connect; recorded in every session header" }
+  threat_thresholds:       { tag: unvalidated, filled_by: "simulator tuning, then rides" }
+  policy_thresholds:       { tag: unvalidated, filled_by: "simulator tuning, then rides" }
+  blockage_thresholds:     { tag: unvalidated, filled_by: "simulator open-road false-alarm rate, then rides" }
+  heartbeat_timing:        { tag: unvalidated, filled_by: "ICD proposal; Stage 5 bench" }
+  imu_report_rates:        { tag: unvalidated, filled_by: "tools/bno085_probe.py" }
+  T_radar_imu:             { tag: nominal,     filled_by: "mechanical, then six-orientation static test" }
+  eskf_noise:              { tag: unvalidated, filled_by: "static log with tools/bno085_probe.py" }
+  cap_truncation_policy:   { tag: unvalidated, filled_by: "team / RFbeam; left configurable for testing (sim.radar.cap_policy)" }
+
+radar_health:
+  gap_window_s: 1.0
+  gap_fraction_degraded: 0.2
+
+imu:
+  gyro_rate_hz: 200
+  accel_rate_hz: 100
+  no_data_timeout_s: 0.1
+  stale_after_s: 0.25
+  eskf:
+    gyro_noise_rad_s: 0.004          # per-sample white noise density proxy (rad/s/sqrt(Hz))
+    gyro_bias_rw_rad_s2: 0.0002
+    accel_dir_noise_rad: 0.08
+    accel_norm_gate_mps2: 0.5        # coordinated-turn degeneracy gate
+    gyro_rate_gate_rad_s: 0.35
+    gated_long_s: 5.0
+    centripetal_compensation: false  # uses PREVIOUS cycle ego velocity when true
+    init_sigma_att_rad: 0.3
+    init_sigma_bias_rad_s: 0.02
+    buffer_s: 2.0
+  motion:
+    window_s: 1.0
+    accel_std_thresh_mps2: 0.15
+    gyro_std_thresh_rad_s: 0.02
+
+ego:
+  ransac_iterations: 80
+  inlier_thresh_mps: 0.35            # ~1.5 speed bins at RSPI 3
+  min_inliers: 3
+  min_az_spread_rad: 0.26            # 15 deg
+  max_rms_mps: 0.3
+  top_of_band_tolerance: 0.25        # fitted speed vs max receding v_radial; MERGED_BINS_SUSPECTED beyond
+  prior_speed_gate_mps: 2.5
+  candidate_min_receding_mps: 0.3
+  stopped_speed_mps: 0.5
+
+clutter:
+  doppler_blind_band_mps: 0.5        # PLACEHOLDER (unvalidated)
+  stationary_resid_mps: 0.5
+  pass_receding_movers: true         # design decision left configurable (plan §4.6)
+  saturation_window_s: 1.0
+  saturation_fraction: 0.5
+
+tracker:
+  cluster_dr_m: 2.0
+  cluster_drdot_mps: 1.5
+  cluster_daz_rad: 0.14
+  gate_chi2: 11.34                   # chi-square 3 dof, 99 %
+  sigma_r_meas_m: 0.25               # 30 cm bins
+  sigma_rdot_meas_mps: 0.25          # ~1 bin
+  sigma_az_meas_rad: 0.035           # 1 deg quantisation + phase noise (2 deg)
+  q_accel_mps2: 2.5                  # range-rate process noise (m/s^2)
+  q_az_rate_rad_s: 0.05
+  init_sigma_rdot_mps: 1.0
+  init_sigma_az_rad: 0.06
+  confirm_approaching: [3, 4]        # M of N
+  confirm_other: [4, 6]
+  tentative_max_misses: 2
+  fov_exit_margin_rad: 0.10
+  doppler_blind_margin_mps: 0.3
+  coast_sigma_r_bound_m: 6.0
+  coast_unexplained_q_accel_mps2: 8.0
+  fov_pass_hold_s: 1.0
+  max_tracks: 24
+
+threat:
+  k_sigma: 2.0
+  t_alert_s: 1.5                     # unvalidated
+  t_warning_s: 3.0
+  t_advisory_s: 6.0
+  r_close_m: 4.0                     # proximity rule: approaching and r < r_close -> at least WARNING
+  proximity_level: 2
+  side_center_halfwidth_m: 1.0
+  side_yaw_sigma_rad: 0.2618         # 15 deg torso-yaw floor (§7)
+  confidence_r_max_m: 30.0
+  coasting_confidence_factor: 0.5
+  unexplained_coast_holds_level: true   # design decision left configurable (plan §4.8)
+
+policy:
+  dwell_s: 1.0
+  hysteresis_factor: 1.3
+  min_on_time_s: 0.7
+  min_on_level: 2
+  alert_level: 3                     # the only level that asserts the alert channel; never for faults
+
+blockage:
+  enabled: true
+  min_silent_s: 5.0                  # in motion, no raw targets and no ego inliers for this long -> RADAR_POSSIBLY_BLOCKED (advisory)
+
+link:
+  port: /dev/serial/by-id/usb-ATMEL_mEDBG_CMSIS-DAP_ATML2523052700013867-if01
+  baudrate: 57600                    # ATmega328P at 16 MHz: 57600 has 0.8 % error (115200 has 2.1 %)
+  heartbeat_min_period_s: 0.05
+  warning_refresh_s: 0.2
+  radar_config_refresh_s: 5.0
+  health_refresh_s: 1.0
+  queue_depth: 8
+  mcu_stall_timeout_s: 0.25          # ICD: loop counter not advancing -> FALLBACK
+  mcu_absent_timeout_s: 0.25
+  alert_stale_s: 0.30                # ICD T_line_max analogue for the keyword alert
+  reconnect_backoff_s: [0.25, 0.5, 1.0, 2.0]
+
+orchestrator:
+  tick_timeout_s: 0.05               # health-only loop tick when no radar frame arrives
+  watchdog_notify_min_period_s: 0.5
+  latency_report_period_s: 10.0
+  gc_freeze: true
+
+power:
+  poll_period_s: 1.0
+
+recording:
+  enabled: true
+  dir: /home/ted/golden_fleece_recordings      # root card (team decision); writer thread + bounded queue never blocks the loop
+  queue_depth: 4096
+  flush_period_s: 1.0

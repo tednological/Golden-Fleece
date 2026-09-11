@@ -1,0 +1,14 @@
+[project]
+name = "goldenfleece"
+version = "0.1.0"
+description = "Golden Fleece rear-radar + IMU cyclist warning pipeline (Raspberry Pi 5 side)"
+requires-python = ">=3.11"
+dependencies = ["numpy", "scipy", "pyserial", "pyyaml"]
+
+[project.optional-dependencies]
+test = ["pytest", "hypothesis"]
+hw = ["gpiod", "adafruit-circuitpython-bno08x", "adafruit-blinka"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

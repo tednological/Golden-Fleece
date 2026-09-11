@@ -1,0 +1,27 @@
+version: 1
+topology: PI_POLLS
+port: /dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_CSDNb151406-if00-port0
+baudrate: 921600          # Stage 0 §4.1: variable wire term 11.9 ms -> 1.5 ms; falls back to 460800 if the bridge cannot do 921600 8E1
+baud_probe_order: [921600, 115200, 460800, 2000000, 3000000]
+params:
+  RRAI: 2                 # 30 m / 30 cm
+  RSPI: 3                 # 100 km/h / 0.8 km/h / 29 ms
+  THOF: 30                # dB; datasheet default. Cap-contention mitigation lever (§15.3 flag left configurable)
+  DEDI: 2                 # 0 receding, 1 approaching, 2 both.  1 solves list contention at the cost of ego-motion (see plan §5)
+  MISP: 0                 # % of speed setting; raises the Doppler floor
+  MASP: 100
+  TRFT: 0
+  VISU: 0                 # vibration suppression affects TDAT only; TDAT is never used
+  RBFR: 1
+frame_duration_s: { 0: 0.229, 1: 0.114, 2: 0.057, 3: 0.029 }   # datasheet typical
+frame_duration_source: nominal
+sensor_delay_s: null      # delta_sensor; measure with tools/kld7_probe.py (GNFD->PDAT-header timing statistics)
+sensor_delay_placeholder_s: 0.010   # used only when allow_unmeasured is true
+usb_latency_s: 0.0        # bridge + kernel delivery delay of the header byte; unvalidated, probe measures
+az_clip_rad: 0.6981317007977318
+elev_min_rad: -0.29670597283903605
+elev_max_rad: 0.29670597283903605
+silent_after_frames: 5    # RADAR_SILENT after k * T_frame without a valid DONE
+resp_timeout_s: 0.2
+reconnect_backoff_s: [0.25, 0.5, 1.0, 2.0, 4.0]
+max_targets: 12

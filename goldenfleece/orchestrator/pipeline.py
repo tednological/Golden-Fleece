@@ -22,7 +22,7 @@ from ..health import HealthTracker
 from ..l03_radar_decode.decode import decode
 from ..l04_imu_decode.imu_decoder import ImuDecoder
 from ..l05_ego_motion.ego import estimate as ego_estimate
-from ..l06_clutter_rejection.clutter import SaturationMonitor, classify
+from ..l06_clutter_rejection.clutter import SaturationMonitor, StaticRangePhantomFilter, classify
 from ..l07_tracking.tracker import Tracker
 from ..l08_threat.threat import ThreatAssessor
 from ..l09_warning_policy.policy import BlockageDetector, WarningPolicy
@@ -73,6 +73,8 @@ class Pipeline:
         self.imu = ImuDecoder(p.imu, cfg.frames.T_radar_imu)
         self.blind = float(p.clutter.doppler_blind_band_mps)
         self.saturation = SaturationMonitor(p.clutter.saturation_window_s, p.clutter.saturation_fraction)
+        pf = p.clutter.phantom_filter
+        self.phantom = StaticRangePhantomFilter(pf.window_frames, pf.min_hits, pf.min_rdot_mps, pf.cell_r_m, pf.cell_rdot_mps) if bool(pf.enabled) else None
         self.gaps = GapMonitor(p.radar_health.gap_window_s, p.radar_health.gap_fraction_degraded)
         self.tracker = Tracker(p.tracker, self.blind, cfg.radar.az_clip_rad)
         self.threat = ThreatAssessor(p.threat)
@@ -120,7 +122,7 @@ class Pipeline:
         timing["l05_ego"] = self._t() - t0
 
         t0 = self._t()
-        clutter = classify(radar, ego, self.cfg.pipeline.clutter)
+        clutter = classify(radar, ego, self.cfg.pipeline.clutter, self.phantom)
         timing["l06_clutter"] = self._t() - t0
 
         t0 = self._t()

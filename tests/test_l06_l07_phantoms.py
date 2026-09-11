@@ -44,3 +44,17 @@ def test_wheel_micro_doppler_phantom_is_kinematically_inconsistent(cfg):
     assert all(not tk.kinematic_consistent or tk.status is TrackStatus.TENTATIVE for tk in bad)
     assert all(a.track_id == good[0].id for a in levels[-1])
     assert ta.counters.rejected["kinematically_inconsistent"] >= 1 or not bad
+
+
+def test_static_range_phantom_filter(cfg):
+    from goldenfleece.l06_clutter_rejection.clutter import StaticRangePhantomFilter
+    pf = cfg.pipeline.clutter.phantom_filter
+    f = StaticRangePhantomFilter(pf.window_frames, pf.min_hits, pf.min_rdot_mps, pf.cell_r_m, pf.cell_rdot_mps)
+    dropped_phantom = dropped_real = 0
+    for k in range(30):
+        phantom = _det(12.0 + 0.15 * ((-1) ** k), 0.0, -6.5, 35.0, 0)     # constant range, "closing" 6.5 m/s
+        real = _det(30.0 - 6.5 * k * DT, 0.1, -6.5, 50.0, 1)              # genuinely closing
+        m = f.step([phantom, real])
+        dropped_phantom += m[0]
+        dropped_real += m[1]
+    assert dropped_phantom >= 15 and dropped_real == 0

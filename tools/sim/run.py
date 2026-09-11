@@ -28,13 +28,21 @@ from tools.sim.scenarios import BY_NAME, Scenario, all_scenarios   # noqa: E402
 PIPELINE_COMPUTE_S = 0.003     # nominal Pi-side compute assumed between header arrival and decision (sim only)
 
 
-def run_scenario(sc: Scenario, cfg, verbose: bool = False, on_frame=None) -> ScenarioMetrics:
+def run_scenario(sc: Scenario, cfg, verbose: bool = False, on_frame=None, record_path: Optional[str] = None) -> ScenarioMetrics:
     rider = RiderKinematics(sc.world.road, sc.rider)
     radar = RadarModel(sc.world, rider, sc.radar)
     imu = ImuModel(rider, sc.imu)
     clock = FakeClock(0.0)
     pipe = Pipeline(cfg, perf_clock=MonotonicClock())
-    pipe.set_health(HealthBits.PIPELINE_RESTARTING, True, 0.0, "orchestrator", "start")
+    rec = None
+    if record_path:
+        from goldenfleece.orchestrator import recording as R
+        rec = R.RecordingWriter(record_path, clock, queue_depth=65536, flush_period_s=0.2)
+        rec.start()
+        rec.put(R.rec_header(0.0, {"scenario": sc.name, "rspi": sc.radar.rspi, "rrai": sc.radar.rrai}, "SIM", ""))
+    ev0 = pipe.set_health(HealthBits.PIPELINE_RESTARTING, True, 0.0, "orchestrator", "start")
+    if rec is not None and ev0 is not None:
+        rec.put(R.rec_health(ev0))
     mc = MetricsCollector(sc.name, sc.notes, sc.expect_warning)
     T = radar.T
     k = 0
@@ -49,6 +57,8 @@ def run_scenario(sc: Scenario, cfg, verbose: bool = False, on_frame=None) -> Sce
             t_now = t_mid + T / 2 + sc.radar.sensor_delay_s
             for s in imu.samples_until(t_now):
                 pipe.ingest_imu(s)
+                if rec is not None:
+                    rec.put(R.rec_imu(s))
             clock.set(t_now)
             if t_now - t_last_tick >= cfg.pipeline.orchestrator.tick_timeout_s:
                 cmd, ev = pipe.tick(t_now)
@@ -56,18 +66,27 @@ def run_scenario(sc: Scenario, cfg, verbose: bool = False, on_frame=None) -> Sce
                 for e in ev:
                     if e.active:
                         mc.health_event(e.bit.name, e.t)
+                    if rec is not None:
+                        rec.put(R.rec_health(e))
                 mc.frame(truth, cmd, False, 0.0, None, False, bool(pipe.health.bits & HealthBits.RADAR_POSSIBLY_BLOCKED), {}, None)
             k += 1
             continue
         t_now = raw.t_header + PIPELINE_COMPUTE_S
         for s in imu.samples_until(raw.t_header):
             pipe.ingest_imu(s)
+            if rec is not None:
+                rec.put(R.rec_imu(s))
         clock.set(t_now)
         res = pipe.process_frame(raw, t_now)
         t_last_tick = t_now
+        if rec is not None:
+            rec.put(R.rec_radar(raw) | {"tn": t_now})
+            rec.put(R.rec_cmd(res.command))
         for e in res.health_events:
             if e.active:
                 mc.health_event(e.bit.name, e.t)
+            if rec is not None:
+                rec.put(R.rec_health(e))
         e2e = (t_now - res.radar.t_mid)
         mc.frame(truth, res.command, res.ego.valid, res.ego.speed, res.ego.psi_travel, raw.cap_hit,
                  bool(pipe.health.bits & HealthBits.RADAR_POSSIBLY_BLOCKED), res.stage_s, e2e,
@@ -81,7 +100,37 @@ def run_scenario(sc: Scenario, cfg, verbose: bool = False, on_frame=None) -> Sce
                   f"truth={'r=%.1f az=%.0f ta=%s' % (v.r, __import__('math').degrees(v.az), f'{v.t_arrival:.1f}' if v.t_arrival else '-') if v else '-'} "
                   f"health={res.command.health_state.name}")
         k += 1
+    if rec is not None:
+        rec.close()
     return mc.finish(sc.fault_onsets, sc.radar.blockage_t_start)
+
+
+def bench_runner(sc: Scenario, cfg) -> dict:
+    """Run the REAL Runner (link + MCU emulator on a loopback transport) on the simulator, timing each
+    loop iteration with a real clock.  This is the measured Pi-side cost of process_frame + link hand-off."""
+    from goldenfleece.l02_imu_data_input.source import QueueImuSource
+    from goldenfleece.l10_mcu_link.emulator import McuEmulator
+    from goldenfleece.l10_mcu_link.link import LoopbackTransport, McuLink
+    from goldenfleece.orchestrator.runner import Runner
+    from tools.sim.sources import SimRadarSource
+    rider = RiderKinematics(sc.world.road, sc.rider)
+    radar = RadarModel(sc.world, rider, sc.radar)
+    imu = ImuModel(rider, sc.imu)
+    clock = FakeClock(0.0)
+    imu_src = QueueImuSource()
+    src = SimRadarSource(radar, imu, imu_src, clock, sc.duration_s)
+    mcu = McuEmulator(clock)
+    link = McuLink(cfg.pipeline.link, clock, lambda: LoopbackTransport(mcu.feed), synchronous=True)
+    link.start()
+    runner = Runner(cfg, clock, src, imu_src, link, perf_clock=MonotonicClock())
+    runner.announce_restart()
+    import gc
+    gc.collect()
+    while not src.finished:
+        runner.step()
+    rep = runner.latency.report()
+    return {"loop_ms": {k: v * 1e3 for k, v in rep["loop"].items()}, "stages_ms": {k: {kk: vv * 1e3 for kk, vv in v.items()} for k, v in rep.items() if k.startswith("l0")},
+            "frames": runner.pipe.frames_processed, "link_lines": link.stats.lines_written, "coalesced": link.stats.coalesced}
 
 
 def main(argv=None) -> int:
@@ -90,12 +139,27 @@ def main(argv=None) -> int:
     ap.add_argument("--verbose", action="store_true")
     ap.add_argument("--json", type=str, default=None)
     ap.add_argument("--config", type=str, default=str(ROOT / "config"))
+    ap.add_argument("--record-dir", type=str, default=None, help="write one recording per scenario (JSONL)")
+    ap.add_argument("--bench", action="store_true", help="time the real Runner loop (process_frame + link hand-off) with a real clock")
     a = ap.parse_args(argv)
+    if a.bench:
+        cfg = load_config(a.config)
+        for sc in ([BY_NAME[n]() for n in a.names] if a.names else all_scenarios()):
+            b = bench_runner(sc, cfg)
+            lm = b["loop_ms"]
+            print(f"{sc.name:32s} frames={b['frames']:5d} loop p50={lm['p50']:.2f} p99={lm['p99']:.2f} max={lm['max']:.2f} ms  "
+                  f"link lines={b['link_lines']} coalesced={b['coalesced']}")
+        return 0
     cfg = load_config(a.config)
     scs = [BY_NAME[n]() for n in a.names] if a.names else all_scenarios()
     results: List[ScenarioMetrics] = []
     for sc in scs:
-        m = run_scenario(sc, cfg, verbose=a.verbose)
+        rp = None
+        if a.record_dir:
+            Path(a.record_dir).mkdir(parents=True, exist_ok=True)
+            rp = str(Path(a.record_dir) / f"{sc.name}.jsonl")
+            Path(rp).unlink(missing_ok=True)
+        m = run_scenario(sc, cfg, verbose=a.verbose, record_path=rp)
         results.append(m)
         print(m.summary_line())
         if m.health_onset_latency_s:

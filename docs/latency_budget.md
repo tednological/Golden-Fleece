@@ -1,6 +1,18 @@
 # Latency budget
 
-Status: **Stage 0 estimate.** Measured values replace the estimates in Stage 4 (Pi side) and Stage 6 (sensor terms). Every row carries its source tag.
+Status: **Stage 4 — Pi-side rows measured on this Raspberry Pi 5 (simulator-driven, real clock); sensor and USB rows remain estimates until the Stage 6 probe.** Every row carries its source tag.
+
+## Measured (Stage 4, Pi 5 Model B, Python 3.11, venv numpy 2.4 / scipy 1.17)
+
+Full `Runner.step()` for one radar frame = l03 → l09 plus link encode and hand-off (loopback transport into the MCU emulator, so the emulator's parsing is included as overhead):
+
+| Scenario | frames | loop p50 | loop p99 | loop max |
+|---|---|---|---|---|
+| overtake_left_10mps (light clutter) | 293 | 0.77 ms | 1.94 ms | 2.02 ms |
+| two_vehicles_crossing | 310 | 1.10 ms | 2.39 ms | 2.76 ms |
+| dense_clutter_cap (12 targets every frame) | 276 | 2.11 ms | 2.98 ms | 3.40 ms |
+
+Per-stage p99 over the whole 18-scenario suite (worst scenario): decode 0.06 ms, IMU state 0.6 ms, ego-motion 1.9 ms, clutter 0.14 ms, tracking 1.3 ms, threat 0.07 ms, policy 0.17 ms. These are without `SCHED_FIFO`, `gc.freeze()` or an isolated core, with the desktop session running: the Stage 0 estimate of 2–4 ms typical holds, and rows 5–12 below are replaced by **≤ 3.4 ms max measured**.
 
 ## Warning path: radar `t_mid` → bytes at the MCU
 
@@ -21,8 +33,8 @@ Configuration assumed: RSPI = 3 (29 ms frame), RRAI = 2, 921600 8E1, `PI_POLLS`,
 | 11 | l08 threat + l09 policy | < 0.3 ms | estimate | per-stage timer |
 | 12 | l10 encode + `put_nowait` (+ GPIO write before it) | < 0.3 ms | estimate | per-stage timer |
 | 13 | Writer-thread wake + CDC transfer (~24 B frame) | 1–2 ms | unvalidated | STATUS round trip halves as a bound |
-| | **Total, typical** | **≈ 30–45 ms** | | |
-| | **Total, p99 target** | **< 60 ms** (GC and scheduling jitter) | | measured in Stage 4 |
+| | **Total, typical** | **≈ 30–45 ms** (Pi-side share measured ≤ 3.4 ms) | | |
+| | **Total, p99 target** | **< 60 ms** (GC and scheduling jitter) | | Pi-side rows measured (above); sensor rows Stage 6 |
 
 Python-side budget (rows 5–12): 2–4 ms typical. Scheduling is a small slice, as §1 of the task expects; `SCHED_FIFO` and `gc.freeze()` are opt-in and only trim the p99.
 
@@ -50,3 +62,7 @@ Loop tick under radar silence: 50 ms. Link queue + CDC transfer: ≤ 5 ms. Heart
 | Pi brownout | MCU FALLBACK | same rule | same, **only if the MCU is powered independently** (precondition, §10.3) | precondition |
 
 Each row becomes a test in Stage 3/4: the fault is injected in the simulator harness and the emulator's reception time is asserted against the column above.
+
+**Measured in simulation (Stage 2/4, FakeClock, 29 ms frames, 50 ms ticks):** RADAR_SILENT onset → detection 0.17 s; RADAR_GAPS 0.25 s (30 % gap probability); IMU_FAULT 0.10 s; RADAR_POSSIBLY_BLOCKED 5.02 s; Pi-hang proxy → emulator FALLBACK ≤ 0.27 s (`tests/test_runner_integration.py`); heartbeat with stalled progress counter → FALLBACK ≤ 0.31 s.
+
+**Open-road blockage advisory false-alarm rate (simulator, §10.2):** with no roadside clutter at all and a 0.02/frame noise false-alarm rate, the advisory was active for 282 of 690 frames (41 %) of a 20 s ride. Proposal: severity *advisory* (a quiet marker, never a threat pattern), `min_silent_s` 5 s (measured detection latency 5.0 s when actually blocked), and a rider-facing meaning of "radar sees nothing — check the cover". Real-road clutter density decides the field rate; `tools/outage_report.py` measures it from recordings.

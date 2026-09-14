@@ -41,16 +41,20 @@ def test_forbidden_world_frame_rejected(tmp_path, repo_root):
         load_config(tmp_path)
 
 
+def _null_delay(d):
+    d["sensor_delay_s"] = None
+
+
 def test_null_sensor_delay_refused_unless_dev_mode(tmp_path, repo_root):
     def strict(d):
         d["allow_unmeasured"] = False
-    _write_all(tmp_path, repo_root, **{"pipeline.yaml": strict})
+    _write_all(tmp_path, repo_root, **{"pipeline.yaml": strict, "radar.yaml": _null_delay})
     with pytest.raises(ConfigError, match="sensor_delay_s"):
         load_config(tmp_path)
 
 
 def test_dev_mode_logs_warning(tmp_path, repo_root):
-    _write_all(tmp_path, repo_root)
+    _write_all(tmp_path, repo_root, **{"radar.yaml": _null_delay})
     cfg = load_config(tmp_path)
     assert any("UNMEASURED sensor_delay_s" in w for w in cfg.warnings)
     assert not cfg.radar.sensor_delay_measured

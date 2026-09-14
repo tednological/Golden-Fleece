@@ -9,9 +9,9 @@ Initial register (Stage 0). Each item names the confirming step. Items move out 
 | R1 | Positive `angle_raw` = target on the sensor's right = **rider's LEFT** (rear-facing) = **negative y** | Datasheet text (angle flag 1 = Right for angle > 0°) and Fig. 5 reading | Stage 6 moving reflector on the rider's left ⇒ positive raw angle. If not, **stop and ask** (§15.1); never negate. |
 | R2 | Negative raw speed = approaching | Datasheet p.6 | Stage 6 reflector approaching |
 | R3 | Range scale 1 cm per count, 30 cm bins at RRAI 2 | Datasheet Table 3/13 | Stage 6 tape measure |
-| R4 | Frame duration per RSPI = 229 / 114 / 57 / 29 ms | Datasheet typical | **RSPI 3 measured 2026-09-14: 28.74 ms p50 (28.05–29.03 p10–p90), 699 frames, 0 gaps.** RSPI 0–2: run `--all-rspi` |
-| R5 | δ_sensor (end of integration → first PDAT byte) | unknown; sequential polling showed poll→header ≈ T (28.0 ms mean), which carries no information about δ | Probe `--random-phase` (delay = δ + U(0,T); min / mean − T/2 / max − T should agree). First run's single random-phase sample bounds δ ≤ 16.9 ms |
-| R6 | Acquisition is free-running and GNFD selects the next completed frame (vs poll-triggered) | Datasheet Fig. 14 wording | Probe: frame period and GNFD→header delay distribution |
+| R4 | Frame duration per RSPI = 229 / 114 / 57 / 29 ms | Datasheet typical | **Measured 2026-09-14: 228.3 / 114.2 / 57.0 / 28.76 ms (p50), 0 gaps at every setting.** In config, tagged measured |
+| R5 | δ_sensor (end of integration → first PDAT byte) | unknown | **Measured 2026-09-14 (`--random-phase`, 672 frames): 8.94 / 8.24 / 8.97 ms from min / mean − T/2 / max − T; config `sensor_delay_s: 0.0087`** |
+| R6 | Acquisition is free-running and GNFD selects the next completed frame (vs poll-triggered) | Datasheet Fig. 14 wording | **Confirmed 2026-09-14: random-phase poll→header delay spans exactly one frame period (28.7 ms spread), i.e. δ + U(0, T)** |
 | R7 | PDAT never exceeds 12 targets | 96-byte max payload | Static bench 2026-09-14: max 6 targets/frame, mean 0.11, cap-hit 0 (a ride is still needed for R10) |
 | R8 | When more than 12 bins exceed threshold, the sensor keeps the strongest | none (simulator convention) | RFbeam / probe with a controlled scene; **unknown until then** |
 | R9 | Every FFT bin above threshold becomes a raw target (vs local maxima only) | Datasheet Fig. 4 wording | Probe: count of targets vs rider speed in clutter |

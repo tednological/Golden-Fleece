@@ -3,6 +3,297 @@
  "configured_baud": 921600,
  "runs": [
   {
+   "rspi": 0,
+   "connected": true,
+   "baud_attempts": [
+    [
+     921600,
+     true,
+     [
+      "HealthEvent(t=814.409664565, bit=<HealthBits.RADAR_CONFIG_MISMATCH: 1024>, active=False, source='l01', detail='parameters verified')"
+     ]
+    ]
+   ],
+   "random_phase": false,
+   "firmware": "K-LD7_APP-RFB-0105",
+   "baud": 921600,
+   "frames": 65,
+   "gaps": 0,
+   "gap_frames_missed": 0,
+   "frame_period_ms": {
+    "p50": 228.334670874915,
+    "p10": 228.0212680556133,
+    "p90": 228.9668459444556
+   },
+   "poll_to_header_ms": {
+    "min": 227.72972830557592,
+    "mean": 231.67023783549283,
+    "p99": 460.7995545972017
+   },
+   "delta_sensor_estimate_ms": {
+    "note": "sequential polling (GNFD right after DONE): delay ~= T and carries no information about delta_sensor; rerun with --random-phase",
+    "min": 227.72972830557592
+   },
+   "header_jitter_ms_p99": 0.7185077985241151,
+   "targets_per_frame": {
+    "mean": 0.0,
+    "max": 0,
+    "cap_hit_rate": 0.0
+   },
+   "resp_codes": {
+    "0": 67
+   },
+   "resync_bytes": 0,
+   "poll_timeouts": 0,
+   "early_poll_busy": null,
+   "magnitude_vs_range_sample": [
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    []
+   ]
+  },
+  {
+   "rspi": 1,
+   "connected": true,
+   "baud_attempts": [
+    [
+     921600,
+     true,
+     [
+      "HealthEvent(t=830.086051012, bit=<HealthBits.RADAR_CONFIG_MISMATCH: 1024>, active=False, source='l01', detail='parameters verified')"
+     ]
+    ]
+   ],
+   "random_phase": false,
+   "firmware": "K-LD7_APP-RFB-0105",
+   "baud": 921600,
+   "frames": 131,
+   "gaps": 0,
+   "gap_frames_missed": 0,
+   "frame_period_ms": {
+    "p50": 114.16118658337382,
+    "p10": 113.96160941671951,
+    "p90": 114.95512794442675
+   },
+   "poll_to_header_ms": {
+    "min": 111.2209912362232,
+    "mean": 114.87426285900503,
+    "p99": 116.81019959723926
+   },
+   "delta_sensor_estimate_ms": {
+    "note": "sequential polling (GNFD right after DONE): delay ~= T and carries no information about delta_sensor; rerun with --random-phase",
+    "min": 111.2209912362232
+   },
+   "header_jitter_ms_p99": 2.730271208349677,
+   "targets_per_frame": {
+    "mean": 0.0,
+    "max": 0,
+    "cap_hit_rate": 0.0
+   },
+   "resp_codes": {
+    "0": 133
+   },
+   "resync_bytes": 0,
+   "poll_timeouts": 0,
+   "early_poll_busy": null,
+   "magnitude_vs_range_sample": [
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    []
+   ]
+  },
+  {
+   "rspi": 2,
+   "connected": true,
+   "baud_attempts": [
+    [
+     921600,
+     true,
+     [
+      "HealthEvent(t=845.769760089, bit=<HealthBits.RADAR_CONFIG_MISMATCH: 1024>, active=False, source='l01', detail='parameters verified')"
+     ]
+    ]
+   ],
+   "random_phase": false,
+   "firmware": "K-LD7_APP-RFB-0105",
+   "baud": 921600,
+   "frames": 262,
+   "gaps": 0,
+   "gap_frames_missed": 0,
+   "frame_period_ms": {
+    "p50": 57.04419829169183,
+    "p10": 56.96592799995415,
+    "p90": 57.704027888803466
+   },
+   "poll_to_header_ms": {
+    "min": 52.8971025971714,
+    "mean": 57.02101615988907,
+    "p99": 57.57109536102689
+   },
+   "delta_sensor_estimate_ms": {
+    "note": "sequential polling (GNFD right after DONE): delay ~= T and carries no information about delta_sensor; rerun with --random-phase",
+    "min": 52.8971025971714
+   },
+   "header_jitter_ms_p99": 0.9208714166106802,
+   "targets_per_frame": {
+    "mean": 0.0,
+    "max": 0,
+    "cap_hit_rate": 0.0
+   },
+   "resp_codes": {
+    "0": 264
+   },
+   "resync_bytes": 0,
+   "poll_timeouts": 0,
+   "early_poll_busy": null,
+   "magnitude_vs_range_sample": [
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    []
+   ]
+  },
+  {
    "rspi": 3,
    "connected": true,
    "baud_attempts": [
@@ -10,37 +301,38 @@
      921600,
      true,
      [
-      "HealthEvent(t=298.822458743, bit=<HealthBits.RADAR_CONFIG_MISMATCH: 1024>, active=False, source='l01', detail='parameters verified')"
+      "HealthEvent(t=861.402385997, bit=<HealthBits.RADAR_CONFIG_MISMATCH: 1024>, active=False, source='l01', detail='parameters verified')"
      ]
     ]
    ],
+   "random_phase": false,
    "firmware": "K-LD7_APP-RFB-0105",
    "baud": 921600,
-   "frames": 699,
+   "frames": 525,
    "gaps": 0,
    "gap_frames_missed": 0,
    "frame_period_ms": {
-    "p50": 28.738364180583176,
-    "p10": 28.046752055558954,
-    "p90": 29.025898763904934
+    "p50": 28.759415416629963,
+    "p10": 28.035643055545734,
+    "p90": 28.99879400001737
    },
    "poll_to_header_ms": {
-    "min": 16.881292888854205,
-    "mean": 28.01978273468053,
-    "p99": 29.487442236131756
+    "min": 27.733925652796643,
+    "mean": 28.249607020221184,
+    "p99": 28.859600652822337
    },
    "delta_sensor_estimate_ms": {
-    "if_free_running(min)": 16.881292888854205,
-    "if_poll_triggered(mean - T)": -0.9802172653194732
+    "note": "sequential polling (GNFD right after DONE): delay ~= T and carries no information about delta_sensor; rerun with --random-phase",
+    "min": 27.733925652796643
    },
-   "header_jitter_ms_p99": 1.8623574930245468,
+   "header_jitter_ms_p99": 0.801539916665206,
    "targets_per_frame": {
-    "mean": 0.10872675250357654,
-    "max": 6,
+    "mean": 0.0,
+    "max": 0,
     "cap_hit_rate": 0.0
    },
    "resp_codes": {
-    "0": 701
+    "0": 527
    },
    "resync_bytes": 0,
    "poll_timeouts": 0,

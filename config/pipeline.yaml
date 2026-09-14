@@ -3,8 +3,8 @@ allow_unmeasured: true     # dev mode: start with null/placeholder register valu
 
 # ---- §12.3 unmeasured-parameters register: every placeholder carries a tag ----------------------
 register:
-  frame_duration_s:        { tag: nominal,     filled_by: "tools/kld7_probe.py --all-rspi (RSPI 3 measured 28.7 ms on 2026-09-14; RSPI 0-2 still nominal)" }
-  sensor_delay_s:          { tag: nominal,     filled_by: "tools/kld7_probe.py timing statistics", required: true }
+  frame_duration_s:        { tag: measured,    filled_by: "tools/kld7_probe.py --all-rspi, 2026-09-14: 228.3 / 114.2 / 57.0 / 28.76 ms" }
+  sensor_delay_s:          { tag: measured,    filled_by: "tools/kld7_probe.py --random-phase, 2026-09-14: 8.7 ms (three estimators within 0.8 ms)", required: true }
   usb_latency_s:           { tag: unvalidated, filled_by: "tools/kld7_probe.py" }
   doppler_blind_band_mps:  { tag: unvalidated, filled_by: "bench: reflector at controlled speeds (one bin = 0.217 m/s at RSPI 3)" }
   pdat_cap:                { tag: nominal,     filled_by: "tools/kld7_probe.py confirms 12" }

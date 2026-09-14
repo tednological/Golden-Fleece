@@ -28,7 +28,7 @@ imu:
   gyro_rate_hz: 200                  # proposal (unvalidated): tools/bno085_probe.py measures the achieved rate
   accel_rate_hz: 100
   spi_baudrate: 1000000
-  pins: { cs: D8, int: D25, reset: D24 }     # Blinka pin names; ASSUMED wiring, confirm at bring-up
+  pins: { cs: D5, int: D25, reset: D24 }     # Blinka pin names; not D8: with dtparam=spi=on the kernel owns GPIO8 as spi0 CS0. Confirm wiring at bring-up
   log_game_rotation_vector: false    # diagnostic only; never fused
   no_data_timeout_s: 0.1
   stale_after_s: 0.25
@@ -73,8 +73,10 @@ clutter:
     cell_r_m: 1.0
     cell_rdot_mps: 2.0
   alias_check:                       # range-aliased returns (beyond RRAI range) are far too weak for their apparent range
-    enabled: true
-    c_alias_db: 63.0                 # reject if magnitude_db < c_alias - 40 log10(r).  UNVALIDATED: recalibrate from probe magnitude-vs-range data
+    enabled: false                   # OFF since 2026-09-14: on the real K-LD7 it rejected 81 % of approaching targets within 5 m (median 52 dB).
+                                     # Replaying that bench session: 0 warnings with it on, 7 episodes (up to ALERT) with it off.
+                                     # Re-enable after recalibrating c_alias_db with a reflector (UNVERIFIED R21/R22).
+    c_alias_db: 63.0                 # reject if magnitude_db < c_alias - 40 log10(r).  UNVALIDATED: simulator magnitude scale; recalibrate from probe magnitude-vs-range data
 
 tracker:
   cluster_dr_m: 2.0

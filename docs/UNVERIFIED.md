@@ -26,8 +26,8 @@ Initial register (Stage 0). Each item names the confirming step. Items move out 
 | R18 | Header-arrival timestamp jitter through the USB bridge < 3 ms p99 | typical | **Confirmed: 1.86 ms p99 (2026-09-14)** |
 | R19 | Relative speeds above 27.8 m/s alias (wrong sign possible) | datasheet p.9 | Accepted limitation (team answer 10); no test planned |
 | R20 | Wheel micro-Doppler (wheel-top returns at ~2x vehicle speed, contact patches at road speed) appears in PDAT as modelled in the simulator | automotive-radar experience, not the datasheet | Rides: `tracker.consistency_*` and `clutter.phantom_filter` are harmless if absent |
-| R21 | Range aliasing: a strong car beyond the RRAI range wraps to a short apparent range with the right Doppler | datasheet p.9 "false reflections" | Probe magnitude-vs-range log with a reflector; recalibrate `clutter.alias_check.c_alias_db` (sim value 63 dB assumes the sim's magnitude scale) |
-| R22 | The sensor's magnitude scale (dB x100) is comparable to the simulator's (10 log RCS - 40 log r + 80) | assumption for the alias check only | Probe |
+| R21 | Range aliasing: a strong car beyond the RRAI range wraps to a short apparent range with the right Doppler | datasheet p.9 "false reflections" | Probe magnitude-vs-range log with a reflector; recalibrate `clutter.alias_check.c_alias_db` (sim value 63 dB assumes the sim's magnitude scale). **Check disabled 2026-09-14 (see R22): range-aliased returns are unfiltered until it is recalibrated** |
+| R22 | The sensor's magnitude scale (dB x100) is comparable to the simulator's (10 log RCS - 40 log r + 80) | assumption for the alias check only | **Contradicted at short range 2026-09-14 (bench recording, 23,049 frames): approaching returns within 5 m have median 52 dB, so c_alias 63 rejected 81 % of them; replay gave 0 warnings with the check on, 7 episodes (up to ALERT) with it off.** Probe with a reflector to recalibrate |
 
 ## IMU (BNO085)
 
@@ -39,8 +39,8 @@ Initial register (Stage 0). Each item names the confirming step. Items move out 
 | I4 | Accelerometer bias small enough to skip estimating (< 0.05 m/s²) | Six-orientation test residuals |
 | I5 | Gyro bias stability adequate for Δψ over track lifetimes (< 0.5°/s drift) | Static log |
 | I6 | INT-edge timestamping is available through the library | Stage 5 (falls back to read-time stamps) |
-| I7 | SPI0 enabled (`dtparam=spi=on`) and Blinka works on this Pi 5 kernel | Stage 5 checklist |
-| I8 | Wiring CS=D8 (CE0), INT=D25, RESET=D24 as in `pipeline.yaml: imu.pins` | assumed | Bring-up |
+| I7 | SPI0 enabled (`dtparam=spi=on`) and Blinka works on this Pi 5 kernel | **2026-09-14: `/dev/spidev0.0` present; Blinka imports (`RASPBERRY_PI_5`) and claims GPIO5/24/25.** SPI traffic to the sensor not yet tested |
+| I8 | Wiring CS=D5 (GPIO5, header pin 29), INT=D25, RESET=D24 as in `pipeline.yaml: imu.pins`. Not CE0: with `dtparam=spi=on` the kernel owns GPIO8 as `spi0 CS0`, and claiming it fails with `GPIO busy` (reproduced 2026-09-14) | assumed | Bring-up |
 | I9 | The library's `_readings` identity change is a reliable new-sample detector (no per-sample timestamps in the library) | code reading of adafruit_bno08x 1.x | `tools/bno085_probe.py` rate check |
 
 ## MCU link and GPIO

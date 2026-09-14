@@ -40,7 +40,7 @@ class Bno085SpiSource:
     def __init__(self, imu_cfg: Section, clock: Clock, device_factory: Optional[Callable[[], Any]] = None) -> None:
         self.cfg = imu_cfg
         self.clock = clock
-        pins = imu_cfg.pins.as_dict() if "pins" in imu_cfg else {"cs": "D8", "int": "D25", "reset": "D24"}
+        pins = imu_cfg.pins.as_dict() if "pins" in imu_cfg else {"cs": "D5", "int": "D25", "reset": "D24"}
         self._factory = device_factory or (lambda: open_bno085_spi(pins, imu_cfg.get("spi_baudrate", 1000000)))
         self.gyro_interval_us = int(1e6 / float(imu_cfg.gyro_rate_hz))
         self.accel_interval_us = int(1e6 / float(imu_cfg.accel_rate_hz))

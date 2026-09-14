@@ -21,7 +21,10 @@ def test_alias_check_rejects_weak_short_range_only(cfg):
     assert not alias_suspect(12.0, 30.0, c)       # weak but far: plausible
     frame = RadarFrame(t_mid=0, t_header=0, frame_number=0, gap=0, rspi=3, rrai=2, detections=(_det(1.5, 0, -5.0, 30.0), _det(12.0, 0, -5.0, 45.0, 1)),
                        n_raw=2, cap_hit=False, counters=StageCounters("l03", 2, 2))
-    out = classify(frame, None, cfg.pipeline.clutter)
+    from goldenfleece.config import Section
+    ccfg = cfg.pipeline.clutter.as_dict()
+    ccfg["alias_check"] = {**ccfg["alias_check"], "enabled": True}     # the mechanism, whatever the deployed setting
+    out = classify(frame, None, Section(ccfg, "pipeline.clutter"))
     assert out.counters.rejected["alias_suspect"] == 1 and len(out.kept) == 1
 
 

@@ -9,21 +9,21 @@ Initial register (Stage 0). Each item names the confirming step. Items move out 
 | R1 | Positive `angle_raw` = target on the sensor's right = **rider's LEFT** (rear-facing) = **negative y** | Datasheet text (angle flag 1 = Right for angle > 0°) and Fig. 5 reading | Stage 6 moving reflector on the rider's left ⇒ positive raw angle. If not, **stop and ask** (§15.1); never negate. |
 | R2 | Negative raw speed = approaching | Datasheet p.6 | Stage 6 reflector approaching |
 | R3 | Range scale 1 cm per count, 30 cm bins at RRAI 2 | Datasheet Table 3/13 | Stage 6 tape measure |
-| R4 | Frame duration per RSPI = 229 / 114 / 57 / 29 ms | Datasheet typical | Probe (DONE cadence) |
-| R5 | δ_sensor (end of integration → first PDAT byte) | unknown | Probe timing statistics (see plan §4.1) |
+| R4 | Frame duration per RSPI = 229 / 114 / 57 / 29 ms | Datasheet typical | **RSPI 3 measured 2026-09-14: 28.74 ms p50 (28.05–29.03 p10–p90), 699 frames, 0 gaps.** RSPI 0–2: run `--all-rspi` |
+| R5 | δ_sensor (end of integration → first PDAT byte) | unknown; sequential polling showed poll→header ≈ T (28.0 ms mean), which carries no information about δ | Probe `--random-phase` (delay = δ + U(0,T); min / mean − T/2 / max − T should agree). First run's single random-phase sample bounds δ ≤ 16.9 ms |
 | R6 | Acquisition is free-running and GNFD selects the next completed frame (vs poll-triggered) | Datasheet Fig. 14 wording | Probe: frame period and GNFD→header delay distribution |
-| R7 | PDAT never exceeds 12 targets | 96-byte max payload | Probe (also asserts on > 12) |
+| R7 | PDAT never exceeds 12 targets | 96-byte max payload | Static bench 2026-09-14: max 6 targets/frame, mean 0.11, cap-hit 0 (a ride is still needed for R10) |
 | R8 | When more than 12 bins exceed threshold, the sensor keeps the strongest | none (simulator convention) | RFbeam / probe with a controlled scene; **unknown until then** |
 | R9 | Every FFT bin above threshold becomes a raw target (vs local maxima only) | Datasheet Fig. 4 wording | Probe: count of targets vs rider speed in clutter |
 | R10 | Cap-hit rate on real rides | analytical estimate says routine at ≥ 8 m/s in clutter | Probe on a ride; §15.3 decision |
 | R11 | Doppler blind band width at RSPI 3 (placeholder 0.5 m/s, `unvalidated`) | one bin = 0.217 m/s, DC bin removed | Bench reflector at controlled speeds |
-| R12 | Sensor firmware version string | unknown | First connect (logged, recorded) |
-| R13 | 921600 8E1 achievable end-to-end (bridge + sensor) | bridge dependent | Probe reports achieved baud |
+| R12 | Sensor firmware version string | unknown | **Measured 2026-09-14: `K-LD7_APP-RFB-0105`** (datasheet placeholder pattern `K-LD7_APP-RFB-XXXX`) |
+| R13 | 921600 8E1 achievable end-to-end (bridge + sensor) | bridge dependent | **Confirmed 2026-09-14 on the PL2303: connected first try at 921600, 701 RESP OK, 0 UART errors, 0 resync bytes** |
 | R14 | Baud recovery: GBYE at each rate yields RESP within 100 ms | protocol reading | Probe after a deliberate kill without GBYE |
 | R15 | Early GNFD (before the previous frame's data arrives) is either queued or answered RESP 5 | unknown | Probe experiment |
 | R16 | Vest fabric over the radar acts as a radome without false targets from flapping | datasheet radome warning says it may not | Ride test; blockage heuristic false-alarm rate |
-| R17 | RESP 4 (UART error) rate at the chosen baud over the actual cabling | none | Probe |
-| R18 | Header-arrival timestamp jitter through the USB bridge < 3 ms p99 | typical | Probe |
+| R17 | RESP 4 (UART error) rate at the chosen baud over the actual cabling | none | **0 in 701 responses over 20 s at 921600 (2026-09-14)** |
+| R18 | Header-arrival timestamp jitter through the USB bridge < 3 ms p99 | typical | **Confirmed: 1.86 ms p99 (2026-09-14)** |
 | R19 | Relative speeds above 27.8 m/s alias (wrong sign possible) | datasheet p.9 | Accepted limitation (team answer 10); no test planned |
 | R20 | Wheel micro-Doppler (wheel-top returns at ~2x vehicle speed, contact patches at road speed) appears in PDAT as modelled in the simulator | automotive-radar experience, not the datasheet | Rides: `tracker.consistency_*` and `clutter.phantom_filter` are harmless if absent |
 | R21 | Range aliasing: a strong car beyond the RRAI range wraps to a short apparent range with the right Doppler | datasheet p.9 "false reflections" | Probe magnitude-vs-range log with a reflector; recalibrate `clutter.alias_check.c_alias_db` (sim value 63 dB assumes the sim's magnitude scale) |

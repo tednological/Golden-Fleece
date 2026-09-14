@@ -165,8 +165,15 @@ def load_radar(path: Path, allow_unmeasured: bool, warnings: List[str]) -> Radar
     fd = {int(k): float(v) for k, v in d["frame_duration_s"].items()}
     if set(fd) != {0, 1, 2, 3}:
         raise ConfigError("radar.yaml: frame_duration_s needs entries for RSPI 0..3")
-    if d["frame_duration_source"] not in _VALID_TAGS:
-        raise ConfigError("radar.yaml: frame_duration_source tag invalid")
+    fds = d["frame_duration_source"]
+    if isinstance(fds, dict):
+        if any(str(v) not in _VALID_TAGS for v in fds.values()) or set(int(k) for k in fds) != {0, 1, 2, 3}:
+            raise ConfigError("radar.yaml: frame_duration_source map needs valid tags for RSPI 0..3")
+        fds_tag = SourceTag("measured" if all(str(v) == "measured" for v in fds.values()) else "nominal")
+    else:
+        if fds not in _VALID_TAGS:
+            raise ConfigError("radar.yaml: frame_duration_source tag invalid")
+        fds_tag = SourceTag(fds)
     sd = d.get("sensor_delay_s")
     if sd is None:
         if not allow_unmeasured:
@@ -184,7 +191,7 @@ def load_radar(path: Path, allow_unmeasured: bool, warnings: List[str]) -> Radar
         baud_probe_order=[int(b) for b in d.get("baud_probe_order", [115200, 460800, 921600, 2000000, 3000000])],
         params=params,
         frame_duration_s=fd,
-        frame_duration_source=SourceTag(d["frame_duration_source"]),
+        frame_duration_source=fds_tag,
         sensor_delay_s=float(sd),
         sensor_delay_measured=measured,
         usb_latency_s=float(d.get("usb_latency_s", 0.0)),

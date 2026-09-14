@@ -1,0 +1,102 @@
+{
+ "port": "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_CSDNb151406-if00-port0",
+ "configured_baud": 921600,
+ "runs": [
+  {
+   "rspi": 3,
+   "connected": true,
+   "baud_attempts": [
+    [
+     921600,
+     true,
+     [
+      "HealthEvent(t=298.822458743, bit=<HealthBits.RADAR_CONFIG_MISMATCH: 1024>, active=False, source='l01', detail='parameters verified')"
+     ]
+    ]
+   ],
+   "firmware": "K-LD7_APP-RFB-0105",
+   "baud": 921600,
+   "frames": 699,
+   "gaps": 0,
+   "gap_frames_missed": 0,
+   "frame_period_ms": {
+    "p50": 28.738364180583176,
+    "p10": 28.046752055558954,
+    "p90": 29.025898763904934
+   },
+   "poll_to_header_ms": {
+    "min": 16.881292888854205,
+    "mean": 28.01978273468053,
+    "p99": 29.487442236131756
+   },
+   "delta_sensor_estimate_ms": {
+    "if_free_running(min)": 16.881292888854205,
+    "if_poll_triggered(mean - T)": -0.9802172653194732
+   },
+   "header_jitter_ms_p99": 1.8623574930245468,
+   "targets_per_frame": {
+    "mean": 0.10872675250357654,
+    "max": 6,
+    "cap_hit_rate": 0.0
+   },
+   "resp_codes": {
+    "0": 701
+   },
+   "resync_bytes": 0,
+   "poll_timeouts": 0,
+   "early_poll_busy": null,
+   "magnitude_vs_range_sample": [
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    []
+   ]
+  }
+ ]
+}

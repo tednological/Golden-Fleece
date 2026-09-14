@@ -31,8 +31,10 @@ def pct(xs, p):
     return s[min(len(s) - 1, int(p * len(s)))] if s else float("nan")
 
 
-def probe_rspi(cfg, clk, opener, rspi: int, seconds: float, early_poll: bool) -> Dict:
-    out: Dict = {"rspi": rspi, "connected": False, "baud_attempts": []}
+def probe_rspi(cfg, clk, opener, rspi: int, seconds: float, early_poll: bool, random_phase: bool = False, seed: int = 0) -> Dict:
+    import random
+    rng = random.Random(seed)
+    out: Dict = {"rspi": rspi, "connected": False, "baud_attempts": [], "random_phase": random_phase}
     drv = None
     rcfg = None
     for baud in [cfg.radar.baudrate] + [b for b in (460800, 115200) if b != cfg.radar.baudrate]:
@@ -55,7 +57,11 @@ def probe_rspi(cfg, clk, opener, rspi: int, seconds: float, early_poll: bool) ->
     mags: List[List[int]] = []
     fns: List[int] = []
     busy = 0
+    T = cfg.radar.frame_duration_s[rspi]
     while clk.now() - t0 < seconds:
+        if random_phase:
+            # decorrelate the poll from the frame cadence: the delay then spans [delta, delta + T]
+            clk.sleep(rng.uniform(0.0, 1.5 * T))
         t_send = clk.now()
         drv._poll_cycle()
         f = drv.get(0.0)
@@ -82,8 +88,13 @@ def probe_rspi(cfg, clk, opener, rspi: int, seconds: float, early_poll: bool) ->
         "frame_period_ms": {"p50": pct(per_frame, 0.5) * 1e3, "p10": pct(per_frame, 0.1) * 1e3, "p90": pct(per_frame, 0.9) * 1e3},
         "poll_to_header_ms": {"min": min(delays) * 1e3 if delays else None, "mean": statistics.fmean(delays) * 1e3 if delays else None,
                               "p99": pct(delays, 0.99) * 1e3},
-        "delta_sensor_estimate_ms": {"if_free_running(min)": min(delays) * 1e3 if delays else None,
-                                     "if_poll_triggered(mean - T)": (statistics.fmean(delays) - cfg.radar.frame_duration_s[rspi]) * 1e3 if delays else None},
+        "delta_sensor_estimate_ms": (
+            {"from_min": min(delays) * 1e3, "from_mean_minus_half_T": (statistics.fmean(delays) - T / 2) * 1e3,
+             "from_max_minus_T": (max(delays) - T) * 1e3, "delay_spread_ms": (max(delays) - min(delays)) * 1e3,
+             "note": "random-phase polling: delay = delta + U(0, T); the three estimators should agree"}
+            if (random_phase and delays) else
+            {"note": "sequential polling (GNFD right after DONE): delay ~= T and carries no information about delta_sensor; "
+                     "rerun with --random-phase", "min": min(delays) * 1e3 if delays else None}),
         "header_jitter_ms_p99": pct([abs(p - statistics.median(per_frame)) for p in per_frame], 0.99) * 1e3 if per_frame else None,
         "targets_per_frame": {"mean": statistics.fmean(counts) if counts else 0, "max": max(counts) if counts else 0,
                               "cap_hit_rate": (sum(1 for c in counts if c >= 12) / len(counts)) if counts else 0.0},
@@ -100,6 +111,7 @@ def main(argv=None) -> int:
     ap.add_argument("--seconds", type=float, default=20.0)
     ap.add_argument("--all-rspi", action="store_true", help="measure the frame period for RSPI 0..3")
     ap.add_argument("--early-poll", action="store_true")
+    ap.add_argument("--random-phase", action="store_true", help="randomise the poll phase to measure delta_sensor (frames will be skipped)")
     ap.add_argument("--fake", action="store_true", help="dry run against tools/fake_kld7.py")
     ap.add_argument("--config", default=str(ROOT / "config"))
     ap.add_argument("--json", default=str(ROOT / "docs" / "probe_kld7.json"))
@@ -122,7 +134,7 @@ def main(argv=None) -> int:
     rspis = [0, 1, 2, 3] if a.all_rspi else [cfg.radar.params["RSPI"]]
     for r in rspis:
         print(f"probing RSPI={r} for {a.seconds:.0f} s ...", flush=True)
-        res = probe_rspi(cfg, clk, opener, r, a.seconds, a.early_poll)
+        res = probe_rspi(cfg, clk, opener, r, a.seconds, a.early_poll, a.random_phase)
         results["runs"].append(res)
         print(json.dumps({k: v for k, v in res.items() if k != "magnitude_vs_range_sample"}, indent=1))
     Path(a.json).write_text(json.dumps(results, indent=1))

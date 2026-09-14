@@ -44,7 +44,7 @@ def test_beam_edge_and_out_of_beam(cfg):
 
 def test_midpoint_timestamp_and_passthrough(cfg):
     f = decode(_frame(t_header=10.0, rspi=3), cfg.radar)
-    assert f.t_mid == pytest.approx(10.0 - cfg.radar.sensor_delay_s - 0.029 / 2)
+    assert f.t_mid == pytest.approx(10.0 - cfg.radar.sensor_delay_s - cfg.radar.frame_duration_s[3] / 2)
     assert f.frame_number == 7 and f.rspi == 3 and f.gap == 0
     f0 = decode(_frame(t_header=10.0, rspi=0), cfg.radar)
     assert f0.t_mid == pytest.approx(10.0 - cfg.radar.sensor_delay_s - 0.229 / 2)

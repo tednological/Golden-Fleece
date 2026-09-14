@@ -13,11 +13,11 @@ params:
   TRFT: 0
   VISU: 0                 # vibration suppression affects TDAT only; TDAT is never used
   RBFR: 1
-frame_duration_s: { 0: 0.229, 1: 0.114, 2: 0.057, 3: 0.029 }   # datasheet typical
-frame_duration_source: nominal
+frame_duration_s: { 0: 0.229, 1: 0.114, 2: 0.057, 3: 0.0287 }  # RSPI 3 measured 2026-09-14 (p50 28.74 ms, p10 28.05, p90 29.03, fw 0105); others datasheet typical
+frame_duration_source: { 0: nominal, 1: nominal, 2: nominal, 3: measured }
 sensor_delay_s: null      # delta_sensor; measure with tools/kld7_probe.py (GNFD->PDAT-header timing statistics)
 sensor_delay_placeholder_s: 0.010   # used only when allow_unmeasured is true
-usb_latency_s: 0.0        # bridge + kernel delivery delay of the header byte; unvalidated, probe measures
+usb_latency_s: 0.0        # PL2303 @921600: header jitter p99 1.9 ms measured 2026-09-14; mean delivery delay not separable from delta_sensor (left 0)
 az_clip_rad: 0.6981317007977318
 elev_min_rad: -0.29670597283903605
 elev_max_rad: 0.29670597283903605

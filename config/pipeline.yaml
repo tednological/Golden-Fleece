@@ -3,12 +3,12 @@ allow_unmeasured: true     # dev mode: start with null/placeholder register valu
 
 # ---- §12.3 unmeasured-parameters register: every placeholder carries a tag ----------------------
 register:
-  frame_duration_s:        { tag: nominal,     filled_by: "tools/kld7_probe.py" }
+  frame_duration_s:        { tag: nominal,     filled_by: "tools/kld7_probe.py --all-rspi (RSPI 3 measured 28.7 ms on 2026-09-14; RSPI 0-2 still nominal)" }
   sensor_delay_s:          { tag: nominal,     filled_by: "tools/kld7_probe.py timing statistics", required: true }
   usb_latency_s:           { tag: unvalidated, filled_by: "tools/kld7_probe.py" }
   doppler_blind_band_mps:  { tag: unvalidated, filled_by: "bench: reflector at controlled speeds (one bin = 0.217 m/s at RSPI 3)" }
   pdat_cap:                { tag: nominal,     filled_by: "tools/kld7_probe.py confirms 12" }
-  kld7_firmware_version:   { tag: nominal,     filled_by: "read on first connect; recorded in every session header" }
+  kld7_firmware_version:   { tag: measured,    filled_by: "K-LD7_APP-RFB-0105 read 2026-09-14; recorded in every session header" }
   threat_thresholds:       { tag: unvalidated, filled_by: "simulator tuning, then rides" }
   alias_check_c_alias_db:  { tag: unvalidated, filled_by: "tools/kld7_probe.py magnitude-vs-range log with a known reflector" }
   consistency_check:       { tag: unvalidated, filled_by: "rides: confirm wheel micro-Doppler appears in PDAT as modelled" }

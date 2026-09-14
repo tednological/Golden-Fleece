@@ -86,3 +86,10 @@ live page keeps running.
 - IMU timing under the running service (2026-09-15): gyro 199 Hz, jitter p99 3.2 ms against a 5 ms limit, with
   occasional single gaps up to about 30 ms. The pipeline uses about 21 % of one core (mostly the IMU poll),
   the web app about 9 %.
+- Anything moving toward the sensor within 4 m raises at least a WARNING (the proximity rule), and at under 1 m
+  an ALERT, including a person at the bench: 6 episodes in 5 minutes with someone sitting next to it
+  (2026-09-15). Keep people more than 2 m away during bench checks, except for deliberate walk tests. Whether
+  the rider's own legs or the bike do the same on a ride is unknown until the first recording.
+- A slow object that stops being detected is kept for up to about 12 s (dashed rings), so a car pacing the
+  rider is not forgotten. Such tracks are held at the rider once their predicted range reaches zero and never
+  raise a warning.

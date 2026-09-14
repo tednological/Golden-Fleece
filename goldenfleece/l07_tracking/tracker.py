@@ -177,7 +177,11 @@ class Tracker:
             rd = max(-self.blind, min(self.blind, float(tr.x[1])))
             tau = tr.t + dt - (tr.coast_started_t if tr.coast_started_t is not None else tr.t)
             tau_prev = max(tau - dt, 0.0)
-            tr.x = np.array([tr.x[0] + rd * dt, rd])
+            # Range cannot go below zero: an unseen slow object predicted to reach the rider is held there, not
+            # carried through to the far side.  It still survives until its sigma bound (a pacer must outlive its
+            # relative-speed zero crossing), and it is not closing: the coast model puts |r_dot| inside the band.
+            tr.x = np.array([max(tr.x[0] + rd * dt, 0.0), rd])
+            tr.closing = False
             tr.P = tr.P + np.diag([(self.blind * tau) ** 2 - (self.blind * tau_prev) ** 2, 0.0])
         else:
             F = np.array([[1.0, dt], [0.0, 1.0]])
@@ -265,6 +269,8 @@ class Tracker:
         tr.coast_reason = reason
         tr.coast_started_t = tr.t
         self.coast_counts[reason.name] += 1
+        if reason is CoastReason.DOPPLER_BLIND:
+            tr.closing = False       # from this frame on: |r_dot| is inside the blind band, which is not closing
         if reason is CoastReason.FOV_EXIT:
             v_close = max(-float(tr.x[1]), 0.5)
             x_long = max(float(tr.x[0]) * math.cos(tr.az), 0.0)

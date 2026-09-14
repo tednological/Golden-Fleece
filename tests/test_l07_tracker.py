@@ -156,3 +156,39 @@ def test_tentative_tracks_die_quietly(cfg):
         out = tr.step(_co(k * DT, [], k), 0.0)
     assert all(t.status is TrackStatus.DELETED for t in out.tracks) or not out.tracks
     assert tr.resolution_counts["NEVER_CONFIRMED"] == 1
+
+
+def _slow_closer_then_unseen(tr, r0=1.0, v=0.6, seen=10, unseen=100):
+    """A slow closer next to the rider (0.6 m/s: visible, just outside the 0.5 m/s blind band) that then goes unseen."""
+    outs = []
+    for k in range(seen):
+        outs.append(tr.step(_co(k * DT, [_det(r0 - v * k * DT, 0.1, -v, i=0)], k), 0.0))
+    for k in range(seen, seen + unseen):
+        outs.append(tr.step(_co(k * DT, [], k), 0.0))
+    return outs
+
+
+def test_doppler_blind_coast_is_held_at_the_rider_not_carried_past(cfg):
+    """Bench finding 2026-09-15: Doppler-blind coasting carried range through zero, so ghosts were drawn in front of
+    a rear-facing radar.  Range is held at >= 0, and the track still survives until its sigma bound (pacer rule)."""
+    tr = _tracker(cfg)
+    outs = _slow_closer_then_unseen(tr)
+    live = [tk for o in outs for tk in o.tracks if tk.status is not TrackStatus.DELETED]
+    assert live and all(tk.r >= 0.0 and tk.x >= 0.0 for tk in live)
+    last = outs[-1].tracks[0]
+    assert last.status is TrackStatus.COASTING and last.coast_reason is CoastReason.DOPPLER_BLIND and last.r == 0.0
+
+
+def test_doppler_blind_coast_is_never_a_threat(cfg):
+    """Bench finding 2026-09-15: the track kept its 'closing' flag from the last update, so while it coasted the
+    proximity rule made it a WARNING/ALERT.  The coast model puts its speed inside the blind band: not closing."""
+    from goldenfleece.l08_threat.threat import ThreatAssessor
+    tr = _tracker(cfg)
+    ta = ThreatAssessor(cfg.pipeline.threat)
+    coasting = []
+    for out in _slow_closer_then_unseen(tr):
+        c = [tk for tk in out.tracks if tk.status is TrackStatus.COASTING]
+        if c:
+            coasting.append((out, c))
+    assert coasting and all(not tk.closing for _, c in coasting for tk in c)
+    assert all(not ta.assess(out.tracks) for out, _ in coasting)

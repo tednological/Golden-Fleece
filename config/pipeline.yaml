@@ -15,7 +15,7 @@ register:
   policy_thresholds:       { tag: unvalidated, filled_by: "simulator tuning, then rides" }
   blockage_thresholds:     { tag: unvalidated, filled_by: "simulator open-road false-alarm rate, then rides" }
   heartbeat_timing:        { tag: unvalidated, filled_by: "ICD proposal; Stage 5 bench" }
-  imu_report_rates:        { tag: unvalidated, filled_by: "tools/bno085_probe.py" }
+  imu_report_rates:        { tag: measured,    filled_by: "tools/bno085_probe.py 2026-09-14: gyro 197.5 Hz (jitter p99 1.3 ms), accel 126 Hz (100 requested)" }
   T_radar_imu:             { tag: nominal,     filled_by: "mechanical, then six-orientation static test" }
   eskf_noise:              { tag: unvalidated, filled_by: "static log with tools/bno085_probe.py" }
   cap_truncation_policy:   { tag: unvalidated, filled_by: "team / RFbeam; left configurable for testing (sim.radar.cap_policy)" }

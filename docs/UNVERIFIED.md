@@ -33,15 +33,16 @@ Initial register (Stage 0). Each item names the confirming step. Items move out 
 
 | # | Assumption | Confirmed by |
 |---|---|---|
-| I1 | The mandated library can deliver ≥ 100 Hz gyro over SPI on the Pi 5 with usable timing (jitter p99 < 5 ms) | Stage 5 measurement; **stop and report** if not (§15.4) |
-| I2 | The library returns rad/s and m/s² (identity SI conversion) | +9.81 on +Z static test |
+| I1 | The mandated library can deliver ≥ 100 Hz gyro over SPI on the Pi 5 with usable timing (jitter p99 < 5 ms) | **Met 2026-09-14 with l02's own SPI transport** (`tools/bno085_probe.py`, 30 s static): gyro 197.5 Hz, dt p99 6.2 ms, jitter p99 1.3 ms; accel 126 Hz (100 requested), jitter p99 2.8 ms. The library's own SPI class cannot start the sensor (I10); its parser and command encoding are still used. Under the full pipeline (radar + IMU, 25 s): gyro 199.4 Hz, jitter p99 3.2 ms, worst gap 12.8 ms; accel jitter p99 5.6 ms, because the reader thread competes with the pipeline loop (see I6) |
+| I2 | The library returns rad/s and m/s² (identity SI conversion) | **Static magnitude 9.88 m/s² (probe 2026-09-14): SI confirmed.** The +9.81 on +Z check waits for `T_radar_imu` (I3) |
 | I3 | `T_radar_imu` is a signed permutation (axis-aligned mount) | Six-orientation static test (Stage 6) |
 | I4 | Accelerometer bias small enough to skip estimating (< 0.05 m/s²) | Six-orientation test residuals |
-| I5 | Gyro bias stability adequate for Δψ over track lifetimes (< 0.5°/s drift) | Static log |
-| I6 | INT-edge timestamping is available through the library | Stage 5 (falls back to read-time stamps) |
+| I5 | Gyro bias stability adequate for Δψ over track lifetimes (< 0.5°/s drift) | Static log. 30 s static 2026-09-14: mean ≤ 0.0009 rad/s (0.05°/s), std 0.003 rad/s at 200 Hz; drift over a ride still to log |
+| I6 | INT-edge timestamping is available through the library | **Not used:** l02 polls H_INTN every 0.2 ms and stamps when it sees it asserted (jitter p99 1.3 ms measured 2026-09-14). gpiod edge timestamps are a later refinement |
 | I7 | SPI0 enabled (`dtparam=spi=on`) and Blinka works on this Pi 5 kernel | **2026-09-14: `/dev/spidev0.0` present; Blinka imports (`RASPBERRY_PI_5`) and claims GPIO5/24/25.** SPI traffic to the sensor not yet tested |
 | I8 | Wiring CS=D5 (GPIO5, header pin 29), INT=D25, RESET=D24 as in `pipeline.yaml: imu.pins`. Not CE0: with `dtparam=spi=on` the kernel owns GPIO8 as `spi0 CS0`, and claiming it fails with `GPIO busy` (reproduced 2026-09-14) | assumed | Bring-up |
-| I9 | The library's `_readings` identity change is a reliable new-sample detector (no per-sample timestamps in the library) | code reading of adafruit_bno08x 1.x | `tools/bno085_probe.py` rate check |
+| I9 | The library's `_readings` identity change is a reliable new-sample detector (no per-sample timestamps in the library) | code reading of adafruit_bno08x 1.x | **Obsolete 2026-09-14:** l02 emits every report in each packet through the library's parser; nothing depends on `_readings` |
+| I10 | The BNO085 accepts SPI host writes with PS0/WAKE tied high | **Contradicted 2026-09-14 (bench):** a write while H_INTN is deasserted is ignored; one riding on a transfer the sensor started is answered. adafruit_bno08x's SPI class also discards the packet it clocks in while writing, so it never gets past "Could not read ID". l02 uses its own full-duplex transport and rides every write on a sensor transfer; `tests/test_l02_bno085_spi.py` pins both behaviours in a fake |
 
 ## MCU link and GPIO
 

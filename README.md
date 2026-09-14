@@ -20,12 +20,13 @@ goldenfleece/   clock.py types.py config.py frames.py health.py
                 l07_tracking (r/r_dot + azimuth KFs, Hungarian, coast reasons)   l08_threat   l09_warning_policy
                 l10_mcu_link (line protocol, writer thread, MCU emulator)   orchestrator (pipeline, runner, recording, latency)
 tools/          sim/ (synthetic world, scenarios, metrics, runner bench)  kld7_probe.py  bno085_probe.py  replay.py
-                outage_report.py  run_pipeline.py  mcu_emulator_serial.py  fake_kld7.py
+                outage_report.py  run_pipeline.py  web_app.py (field web app)  vest_display.py (terminal "vest")
+                mcu_emulator_serial.py  fake_kld7.py  fake_bno085.py
 config/         radar.yaml  frames.yaml  pipeline.yaml (thresholds + the unmeasured-parameters register)
 docs/           STAGE0_PLAN.md  STAGE_REPORTS.md  mcu_icd.md  latency_budget.md  UNVERIFIED.md  DECISIONS.md
-                deployment.md  bringup_checklist.md
-deploy/         goldenfleece.service
-tests/          120 unit / property / invariant / integration tests
+                deployment.md  bringup_checklist.md  field_testing.md
+deploy/         goldenfleece.service (pipeline)  goldenfleece-web.service (field web app)
+tests/          unit / property / invariant / integration tests
 ```
 
 ## Quick start
@@ -40,6 +41,8 @@ python3 -m venv --system-site-packages .venv && .venv/bin/pip install scipy pyte
 .venv/bin/python tools/kld7_probe.py --seconds 20 --all-rspi    # hardware: see docs/bringup_checklist.md
 .venv/bin/python tools/bno085_probe.py --seconds 30
 .venv/bin/python tools/run_pipeline.py --config config           # the pipeline (see docs/deployment.md)
+.venv/bin/python tools/web_app.py                               # field web app on :8080 (see docs/field_testing.md)
+.venv/bin/python tools/vest_display.py /tmp/gf_vest             # terminal "vest"; then run_pipeline.py --link-port /tmp/gf_vest
 ```
 
 ## Rules the code enforces (tests in `tests/test_invariants.py` and friends)
@@ -50,5 +53,6 @@ python3 -m venv --system-site-packages .venv && .venv/bin/pip install scipy pyte
   never asserted for a fault; heartbeats and `WATCHDOG=1` come from the pipeline loop only.
 
 ## Status
-Stages 0–5 complete and committed; Stage 6 (hardware bring-up) is pending: see `docs/STAGE_REPORTS.md`,
-`docs/bringup_checklist.md` and `docs/UNVERIFIED.md`.
+Stages 0–5 complete. Stage 6 (hardware bring-up) in progress: K-LD7 timing measured, the BNO085 running on
+l02's own SPI transport (gyro ~200 Hz), the field web app and both systemd services in place. Before riding,
+work through `docs/field_testing.md`; open items are in `docs/UNVERIFIED.md`.

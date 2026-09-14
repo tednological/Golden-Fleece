@@ -54,7 +54,9 @@ def test_null_sensor_delay_refused_unless_dev_mode(tmp_path, repo_root):
 
 
 def test_dev_mode_logs_warning(tmp_path, repo_root):
-    _write_all(tmp_path, repo_root, **{"radar.yaml": _null_delay})
+    def dev(d):
+        d["allow_unmeasured"] = True
+    _write_all(tmp_path, repo_root, **{"pipeline.yaml": dev, "radar.yaml": _null_delay})
     cfg = load_config(tmp_path)
     assert any("UNMEASURED sensor_delay_s" in w for w in cfg.warnings)
     assert not cfg.radar.sensor_delay_measured

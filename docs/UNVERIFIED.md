@@ -63,7 +63,7 @@ Initial register (Stage 0). Each item names the confirming step. Items move out 
 |---|---|---|
 | P1 | `vcgencmd get_throttled` bits reflect UPS brownouts on the 5 V rail | Bench with a load |
 | P2 | SD-card write stalls do not stall the hot loop (writer thread + bounded queue) | Stage 4 latency measurement while recording |
-| P3 | systemd `WatchdogSec` restart path announces `PIPELINE_RESTARTING` within the documented time | Stage 4 harness + Stage 5 on-device |
+| P3 | systemd `WatchdogSec` restart path announces `PIPELINE_RESTARTING` within the documented time | Stage 4 harness + Stage 5 on-device. **2026-09-15 on device: `Type=notify` readiness and `WATCHDOG=1` keep-alive work (service active, 0 restarts with `WatchdogSec=2`). The restart path itself (`kill -STOP`) is still to test** |
 
 ## Thresholds tagged `unvalidated` (simulator-tuned, then rides)
 

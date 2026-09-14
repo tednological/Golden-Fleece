@@ -1,5 +1,5 @@
 version: 1
-allow_unmeasured: true     # dev mode: start with null/placeholder register values and log loudly.  Set false for rides.
+allow_unmeasured: false    # field testing: refuse to start with a null required value.  true = dev mode (placeholders, logged loudly)
 
 # ---- §12.3 unmeasured-parameters register: every placeholder carries a tag ----------------------
 register:
@@ -158,4 +158,4 @@ recording:
   enabled: true
   dir: /home/ted/golden_fleece_recordings      # root card (team decision); writer thread + bounded queue never blocks the loop
   queue_depth: 4096
-  flush_period_s: 1.0
+  flush_period_s: 0.2                # the field web app follows this file; flush often so it lags little

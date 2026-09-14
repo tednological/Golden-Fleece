@@ -1,0 +1,20 @@
+# Golden Fleece field web app — systemd unit (opt-in; a separate process: the pipeline never depends on it)
+# Install: sudo cp deploy/goldenfleece-web.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now goldenfleece-web
+[Unit]
+Description=Golden Fleece field web app (live radar, IMU and warnings on port 8080)
+After=network.target
+
+[Service]
+Type=simple
+User=ted
+Group=ted
+WorkingDirectory=/home/ted/golden_fleece
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/ted/golden_fleece/.venv/bin/python /home/ted/golden_fleece/tools/web_app.py --port 8080
+Restart=always
+RestartSec=2
+# Below the pipeline: it replays l03..l09 for display, and must never compete with the real thing.
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

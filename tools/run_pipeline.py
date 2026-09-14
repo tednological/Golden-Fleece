@@ -101,6 +101,7 @@ def main(argv=None) -> int:
     ap.add_argument("--imu", default="bno085", help="bno085 | sim | none")
     ap.add_argument("--no-imu", action="store_true")
     ap.add_argument("--no-link", action="store_true", help="loopback link into an in-process MCU emulator (log only)")
+    ap.add_argument("--link-port", default=None, help="override pipeline.yaml link.port (e.g. the pty made by tools/vest_display.py)")
     ap.add_argument("--no-record", action="store_true")
     ap.add_argument("--deploy", action="store_true")
     ap.add_argument("--log-level", default="INFO")
@@ -137,7 +138,8 @@ def main(argv=None) -> int:
         transport_factory = lambda: LoopbackTransport(mcu.feed)  # noqa: E731
     else:
         lk = cfg.pipeline.link
-        transport_factory = lambda: SerialTransport(str(lk.port), int(lk.baudrate))  # noqa: E731
+        port = a.link_port or str(lk.port)
+        transport_factory = lambda: SerialTransport(port, int(lk.baudrate))  # noqa: E731
 
     runner_holder = {}
 

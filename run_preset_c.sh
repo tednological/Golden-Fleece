@@ -4,6 +4,7 @@
 # the 12-target list. Cost: the pipeline's own-speed estimate needs receding clutter and never becomes valid, so
 # stationary-clutter rejection and receding movers are gone. A team decision before any ride.
 # Also starts the field web app on port 8080 with this preset's config (http://raspberrypi.local:8080/).
+# --thof N overrides the threshold offset for one run (10..60 dB), e.g. ./run_preset_c.sh --thof 15.
 # Extra arguments go to tools/run_pipeline.py (e.g. --no-imu, --no-record).
 exec "$(dirname "$0")/tools/run_preset.sh" C "long range, busy road (approaching only, experimental)" \
     radar.params.RRAI=3 \

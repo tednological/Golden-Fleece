@@ -3,6 +3,7 @@
 # Cars the radar already sees beyond 30 m are measured at their true range instead of folding back to a false
 # short range. Sensitivity is unchanged; range resolution drops from 30 cm to 1 m.
 # Also starts the field web app on port 8080 with this preset's config (http://raspberrypi.local:8080/).
+# --thof N overrides the threshold offset for one run (10..60 dB), e.g. ./run_preset_a.sh --thof 15.
 # Extra arguments go to tools/run_pipeline.py (e.g. --no-imu, --no-record).
 exec "$(dirname "$0")/tools/run_preset.sh" A "100 m range, stock sensitivity" \
     radar.params.RRAI=3 \

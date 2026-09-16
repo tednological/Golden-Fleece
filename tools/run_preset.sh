@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # Shared runner for the radar presets (run_preset_a.sh, run_preset_b.sh, run_preset_c.sh).
 #
-#   tools/run_preset.sh NAME "DESCRIPTION" [override ...] [-- run_pipeline.py args ...]
+#   tools/run_preset.sh NAME "DESCRIPTION" [override ...] [-- [--thof N] run_pipeline.py args ...]
+#
+# --thof N (or --thof=N) replaces the preset's threshold offset for this run: an integer 10..60 dB (datasheet
+# range; lower = more sensitive = longer range, more false and clutter targets). It is applied after the preset's
+# own THOF, so it wins, and the change list printed below shows the value that was used.
 #
 # Builds /tmp/goldenfleece_preset_NAME from config/ plus the overrides (tools/config_overlay.py validates it),
 # stops the goldenfleece service (it owns the radar port and the IMU), runs the pipeline in the foreground
@@ -33,7 +37,34 @@ while [[ $# -gt 0 && "$1" != "--" ]]; do
     shift
 done
 [[ "${1:-}" == "--" ]] && shift
-PIPELINE_ARGS=("$@")
+PIPELINE_ARGS=()
+THOF=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --thof)
+            [[ $# -ge 2 ]] || { echo "--thof needs a value (10..60)" >&2; exit 2; }
+            THOF="$2"
+            shift 2
+            ;;
+        --thof=*)
+            THOF="${1#--thof=}"
+            shift
+            ;;
+        *)
+            PIPELINE_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+if [[ -n "$THOF" ]]; then
+    if ! [[ "$THOF" =~ ^[0-9]+$ ]] || (( 10#$THOF < 10 || 10#$THOF > 60 )); then
+        echo "--thof must be an integer from 10 to 60 dB (got '$THOF')" >&2
+        exit 2
+    fi
+    THOF=$((10#$THOF))
+    OVERRIDES+=("radar.params.THOF=${THOF}")
+    DESCRIPTION="${DESCRIPTION}, THOF override ${THOF} dB"
+fi
 CONFIG_DIR="/tmp/goldenfleece_preset_${NAME}"
 
 echo "=== Golden Fleece preset ${NAME}: ${DESCRIPTION} ==="

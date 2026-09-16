@@ -48,3 +48,21 @@ def test_preset_scripts_build_valid_configs(script, expect):
     blind = cfg.pipeline.clutter.doppler_blind_band_mps
     assert blind >= expect["MISP"] * 100 / 3.6 / 100 - 1e-9          # MISP % of 100 km/h, in m/s
     assert "RRAI 3" in r.stdout and "dry run" in r.stdout
+
+
+@pytest.mark.parametrize("args,thof", [(["--thof", "15"], 15), (["--thof=10"], 10), (["--thof", "060"], 60), ([], 20)])
+def test_thof_override(args, thof):
+    env = {**os.environ, "PRESET_DRY_RUN": "1"}
+    r = subprocess.run(["bash", str(ROOT / "run_preset_b.sh"), *args, "--no-imu"], capture_output=True, text=True, env=env, timeout=60)
+    assert r.returncode == 0, r.stderr
+    cfg = load_config(Path("/tmp/goldenfleece_preset_B"))
+    assert cfg.radar.params["THOF"] == thof
+    assert cfg.radar.params["MISP"] == 2 and cfg.radar.params["RRAI"] == 3          # the rest of preset B is kept
+    assert ("THOF override" in r.stdout) == bool(args)
+
+
+@pytest.mark.parametrize("args", [["--thof", "9"], ["--thof", "61"], ["--thof", "abc"], ["--thof", "15.5"], ["--thof"]])
+def test_thof_override_rejects_bad_values(args):
+    env = {**os.environ, "PRESET_DRY_RUN": "1"}
+    r = subprocess.run(["bash", str(ROOT / "run_preset_a.sh"), *args], capture_output=True, text=True, env=env, timeout=60)
+    assert r.returncode == 2 and "--thof" in r.stderr

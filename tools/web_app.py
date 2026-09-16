@@ -425,6 +425,8 @@ td.l,th.l{text-align:left} .scroll{overflow-x:auto}
 .muted{color:var(--dim)} .note{font-size:12px;color:var(--dim);padding:6px 12px 10px}
 .legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--dim);padding:6px 12px 10px}
 .legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+.zoom{display:flex;align-items:center;gap:10px;padding:6px 12px;font:12px var(--mono);color:var(--dim)}
+.zoom input{flex:1;accent-color:#6fa8ff} .zoom output{min-width:44px;text-align:right;color:var(--text)}
 details summary{cursor:pointer;padding:9px 12px;color:var(--dim);font-size:11px;letter-spacing:.12em;text-transform:uppercase}
 details ol{margin:0;padding:0 16px 12px 32px} details li{margin:5px 0}
 </style></head><body>
@@ -434,10 +436,11 @@ details ol{margin:0;padding:0 16px 12px 32px} details li{margin:5px 0}
 <div id="banner"><div id="lvl">–</div><div id="side"></div><div id="bsub">waiting for the pipeline…</div></div>
 <main>
  <section class="card"><h2>Radar · top view · rider at the top, riding up the screen</h2>
+  <div class="zoom"><label for="rm">view range</label><input type="range" id="rm" min="5" max="100" step="5" value="100"><output id="rmv">100 m</output></div>
   <canvas id="scope"></canvas>
   <div class="legend"><span><i style="background:#ff9a3c"></i>approaching</span><span><i style="background:#6fa8ff"></i>receding mover</span>
    <span><i style="background:#7b8a99"></i>stationary</span><span><i style="border:1px solid #7b8a99"></i>rejected</span>
-   <span>ring = track, colour = threat level, dashed = coasting</span></div></section>
+   <span>ring = track, colour = threat level, dashed = coasting</span><span>▲ at the edge = beyond the view range</span></div></section>
  <section class="card"><h2>IMU</h2><div class="body"><div class="kv" id="imukv"></div>
   <canvas id="gchart" style="height:90px;margin-top:10px"></canvas><canvas id="achart" style="height:64px;margin-top:6px"></canvas></div></section>
  <section class="card"><h2>Radar targets this frame (decoded by l03)</h2><div class="scroll"><table id="tg"></table></div>
@@ -468,6 +471,10 @@ function chip(el,txt,cls){el.textContent=txt;el.className="chip"+(cls?" "+cls:""
 function kv(el,pairs){el.innerHTML=pairs.map(([k,v])=>`<span>${k}</span><span>${v}</span>`).join("");}
 function connect(){const es=new EventSource("events");es.onmessage=m=>{lastMsg=Date.now();S=JSON.parse(m.data);render();};}
 setInterval(()=>{const up=Date.now()-lastMsg<2500;chip($("conn"),up?"connected":"no link to the Pi",up?"ok":"bad");},500);
+let RM=100;try{const v=+localStorage.getItem("gf.rm");if(v>=5&&v<=100)RM=v;}catch(e){}
+$("rm").value=RM;$("rmv").textContent=RM+" m";
+$("rm").addEventListener("input",e=>{RM=+e.target.value;$("rmv").textContent=RM+" m";
+ try{localStorage.setItem("gf.rm",RM);}catch(e){}if(S)scope();});
 function render(){banner();header();scope();targets();tracks();imu();health();}
 function banner(){const d=S.decision||{},l=d.lvl||0;
  $("banner").style.background=LVBG[l];$("lvl").textContent=LV[l];$("lvl").style.color=LVFG[l];
@@ -483,18 +490,28 @@ function header(){const hs=(S.decision||{}).hs;chip($("hs"),"health "+(hs||"–"
 function scope(){const c=$("scope"),dpr=devicePixelRatio||1,w=c.clientWidth,h=Math.round(w*0.95);
  c.style.height=h+"px";c.width=w*dpr;c.height=h*dpr;const g=c.getContext("2d");g.scale(dpr,dpr);
  g.fillStyle="#0b0f14";g.fillRect(0,0,w,h);
- const A=40*Math.PI/180,RM=32,top=28,s=Math.min((h-top-24)/RM,(w/2-8)/(RM*Math.sin(A))),cx=w/2;
+ const A=40*Math.PI/180,top=28,s=Math.min((h-top-24)/RM,(w/2-8)/(RM*Math.sin(A))),cx=w/2;
  const P=(x,y)=>[cx+y*s,top+x*s];               // radar frame: +x behind the rider (down), +y rider's right (right)
  g.fillStyle="#0f1b25";g.beginPath();g.moveTo(cx,top);g.arc(cx,top,RM*s,Math.PI/2-A,Math.PI/2+A);g.closePath();g.fill();
  g.strokeStyle="#22323f";g.fillStyle="#5d7185";g.font="11px ui-monospace,monospace";
- for(const r of [5,10,20,30]){g.beginPath();g.arc(cx,top,r*s,Math.PI/2-A,Math.PI/2+A);g.stroke();const[lx,ly]=P(r,0);g.fillText(r+" m",lx+3,ly-3);}
+ const step=RM<=10?2:RM<=25?5:RM<=50?10:25,rings=[];for(let r=step;r<=RM-step/2;r+=step)rings.push(r);rings.push(RM);
+ for(const r of rings){g.beginPath();g.arc(cx,top,r*s,Math.PI/2-A,Math.PI/2+A);g.stroke();const[lx,ly]=P(r,0);g.fillText(r+" m",lx+3,ly-3);}
  g.setLineDash([3,4]);g.beginPath();g.moveTo(cx,top);g.lineTo(...P(RM,0));g.stroke();g.setLineDash([]);
  g.fillStyle="#d2dde8";g.beginPath();g.moveTo(cx,top-14);g.lineTo(cx-8,top+2);g.lineTo(cx+8,top+2);g.closePath();g.fill();
  g.fillStyle="#8da2b5";g.font="12px system-ui,sans-serif";g.textAlign="left";g.fillText("◀ rider's LEFT",6,h-7);
  g.textAlign="right";g.fillText("rider's RIGHT ▶",w-6,h-7);g.textAlign="left";
- for(const t of S.targets||[]){if(t.x==null)continue;const[px,py]=P(t.x,t.y),col=CLS[t.cls];g.beginPath();g.arc(px,py,4.5,0,2*Math.PI);
+ // anything past the view range: an arrow on the outer ring along its bearing (clamped to the fan), labelled with its range
+ const edge=(x,y,col,fill,txt)=>{const b=Math.max(-A,Math.min(A,Math.atan2(y,x))),dx=Math.sin(b),dy=Math.cos(b),R=RM*s,
+   ex=(d,o)=>[cx+dx*d-dy*o,top+dy*d+dx*o];
+  g.beginPath();g.moveTo(...ex(R-2,0));g.lineTo(...ex(R-14,-6));g.lineTo(...ex(R-14,6));g.closePath();
+  if(fill){g.fillStyle=col;g.fill();}else{g.strokeStyle=col;g.lineWidth=1.2;g.stroke();g.lineWidth=1;}
+  g.fillStyle=col;g.font="10px ui-monospace,monospace";g.textAlign="center";g.fillText(txt,...ex(R-26,0).map((v,i)=>v+(i?3:0)));g.textAlign="left";};
+ const out=(x,y)=>Math.hypot(x,y)>RM;
+ for(const t of S.targets||[]){if(t.x==null)continue;
+  if(out(t.x,t.y)){edge(t.x,t.y,CLS[t.cls]||"#7b8a99",!!CLS[t.cls],f(Math.hypot(t.x,t.y),0)+" m");continue;}const[px,py]=P(t.x,t.y),col=CLS[t.cls];g.beginPath();g.arc(px,py,4.5,0,2*Math.PI);
   if(col){g.fillStyle=col;g.fill();}else{g.strokeStyle="#7b8a99";g.lineWidth=1;g.stroke();}}
- for(const k of S.tracks||[]){if(k.x==null)continue;const[px,py]=P(k.x,k.y),col=RING[k.level||0];
+ for(const k of S.tracks||[]){if(k.x==null)continue;
+  if(out(k.x,k.y)){edge(k.x,k.y,RING[k.level||0],true,"#"+k.id+" "+f(Math.hypot(k.x,k.y),0)+" m");continue;}const[px,py]=P(k.x,k.y),col=RING[k.level||0];
   g.strokeStyle=col;g.lineWidth=k.status==="CONFIRMED"?2.5:1.2;g.setLineDash(k.status==="COASTING"?[4,3]:[]);
   g.beginPath();g.arc(px,py,10,0,2*Math.PI);g.stroke();g.setLineDash([]);g.lineWidth=1;
   g.fillStyle=col;g.font="11px ui-monospace,monospace";g.fillText("#"+k.id+" "+f(k.vc,1)+" m/s",px+13,py+4);}}

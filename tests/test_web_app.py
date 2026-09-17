@@ -92,6 +92,8 @@ def test_http_serves_page_state_and_events(cfg, overtake_recording):
     try:
         page = urllib.request.urlopen(base + "/", timeout=5).read().decode()
         assert "Golden Fleece" in page and "EventSource" in page
+        page3d = urllib.request.urlopen(base + "/3d", timeout=5).read().decode()
+        assert "three" in page3d and 'EventSource("events")' in page3d
         state = json.loads(urllib.request.urlopen(base + "/state", timeout=5).read())
         assert state["session"] == overtake_recording.name and "imu" in state and "targets" in state
         with urllib.request.urlopen(base + "/events", timeout=5) as r:

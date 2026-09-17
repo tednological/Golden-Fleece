@@ -314,6 +314,8 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path in ("/", "/index.html"):
             self._send(200, "text/html; charset=utf-8", PAGE.encode())
+        elif path == "/3d":                                   # prototype 3D radar view, read per request
+            self._send(200, "text/html; charset=utf-8", (Path(__file__).parent / "web_scope3d.html").read_bytes())
         elif path == "/state":
             self._send(200, "application/json", self.server.snapshot_bytes())
         elif path == "/events":
@@ -432,7 +434,7 @@ details ol{margin:0;padding:0 16px 12px 32px} details li{margin:5px 0}
 </style></head><body>
 <header><h1>Golden Fleece · field view</h1>
  <span id="conn" class="chip">connecting…</span><span id="hs" class="chip">health –</span><span id="age" class="chip">–</span>
- <span id="sess" class="chip">–</span></header>
+ <span id="sess" class="chip">–</span><a href="3d" style="color:#6fa8ff;font-size:13px">3D view (prototype)</a></header>
 <div id="banner"><div id="lvl">–</div><div id="side"></div><div id="bsub">waiting for the pipeline…</div></div>
 <main>
  <section class="card"><h2>Radar · top view · rider at the top, riding up the screen</h2>

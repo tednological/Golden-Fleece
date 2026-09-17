@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Golden Fleece · 3D radar</title>
+<style>
+:root{--bg:#0b0f14;--panel:#111a23;--line:#1f2d3a;--text:#d2dde8;--dim:#7489a0;--ok:#39d3a0;--warn:#ff9a3c;--bad:#ff5c5c;
+ --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden}
+header{position:fixed;top:0;left:0;right:0;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;padding:8px 12px;
+ background:rgba(17,26,35,.88);border-bottom:1px solid var(--line);z-index:2}
+header h1{font-size:15px;margin:0 6px 0 0;font-weight:650}
+header a{color:#6fa8ff;font-size:13px}
+.chip{font:12px var(--mono);padding:2px 8px;border:1px solid var(--line);border-radius:10px;color:var(--dim);white-space:nowrap}
+.chip.ok{color:var(--ok);border-color:var(--ok)} .chip.warn{color:var(--warn);border-color:var(--warn)} .chip.bad{color:var(--bad);border-color:var(--bad)}
+#lvl{font-weight:800;letter-spacing:.03em}
+#view{position:fixed;inset:0;display:block;width:100%;height:100%;touch-action:none}
+#controls{position:fixed;left:0;right:0;bottom:0;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;padding:8px 12px;
+ background:rgba(17,26,35,.88);border-top:1px solid var(--line);font:12px var(--mono);color:var(--dim);z-index:2}
+#controls input[type=range]{flex:1;min-width:120px;accent-color:#6fa8ff}
+#controls output{min-width:44px;text-align:right;color:var(--text)}
+button{font:12px var(--mono);color:var(--text);background:#18242f;border:1px solid var(--line);border-radius:6px;padding:4px 10px;cursor:pointer}
+button.on{border-color:#6fa8ff;color:#6fa8ff}
+#labels{position:fixed;inset:0;pointer-events:none;z-index:1}
+.lab{position:absolute;transform:translate(-50%,-100%);font:11px var(--mono);white-space:nowrap;padding:1px 5px;border-radius:4px;
+ background:rgba(11,15,20,.72);text-shadow:0 1px 2px #000}
+#msg{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;color:var(--dim);z-index:1;max-width:90vw}
+</style></head><body>
+<header><h1>Golden Fleece · 3D radar</h1>
+ <span id="conn" class="chip">connecting…</span><span id="lvl" class="chip">–</span><span id="src" class="chip">–</span>
+ <a href="./">2D field view</a></header>
+<canvas id="view"></canvas>
+<div id="labels"></div>
+<div id="msg"></div>
+<div id="controls">
+ <span>camera</span><button data-cam="chase" class="on">from traffic</button><button data-cam="top">overhead</button>
+ <button data-cam="mirror">mirror (L/R flipped)</button>
+ <label for="rm">view range</label><input type="range" id="rm" min="10" max="100" step="5" value="100"><output id="rmv">100 m</output>
+ <button id="demo">demo traffic</button>
+</div>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+ "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from "three";
+import {OrbitControls} from "three/addons/controls/OrbitControls.js";
+
+// Radar frame -> scene: x (m behind the rider) -> +Z, y (m to the rider's right) -> +X, up -> +Y; the rider is at the
+// origin riding towards -Z. A camera looking back from the rider mirrors left and right, so "from traffic" and
+// "overhead" look FORWARD over the traffic at the rider (rider's left on screen left, as in the 2D view);
+// "mirror" is the rider's-eye rear view and is labelled as mirrored.
+const LV=["NO THREAT","ADVISORY","WARNING","ALERT"],LVFG=["#9fb3c6","#f0d35a","#ffae5c","#ff8080"];
+const RING=[0xc9d6e2,0xf0d35a,0xff9a3c,0xff4d4d];
+const CLS={APPROACHING:0xff9a3c,RECEDING_MOVER:0x6fa8ff,RECEDING_UNCLASSIFIED:0x6fa8ff,STATIONARY:0x7b8a99};
+const BODY=[0x8fa3b8,0xd9b53a,0xe07a24,0xd93636];            // car paint by threat level
+const A=40*Math.PI/180;
+const $=id=>document.getElementById(id);
+const f=(v,n=1)=>v==null||!isFinite(v)?"–":Number(v).toFixed(n);
+function chip(el,txt,cls){el.textContent=txt;el.className="chip"+(cls?" "+cls:"");}
+
+let RM=100;try{const v=+localStorage.getItem("gf.rm");if(v>=10&&v<=100)RM=v;}catch(e){}
+let cam="chase";try{cam=localStorage.getItem("gf.cam3d")||cam;}catch(e){}
+let demo=new URLSearchParams(location.search).has("demo");
+
+// ---- renderer, scene, lights --------------------------------------------------------------------------------
+const canvas=$("view");
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
+renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x0b0f14);scene.fog=new THREE.Fog(0x0b0f14,120,260);
+const camera=new THREE.PerspectiveCamera(45,1,0.5,600);
+const controls=new OrbitControls(camera,canvas);
+controls.enableDamping=true;controls.maxPolarAngle=Math.PI*0.49;controls.minDistance=4;controls.maxDistance=260;
+scene.add(new THREE.HemisphereLight(0xbcd3ea,0x1a2230,0.9));
+const sun=new THREE.DirectionalLight(0xffffff,1.6);sun.position.set(-30,60,20);sun.castShadow=true;
+sun.shadow.mapSize.set(2048,2048);Object.assign(sun.shadow.camera,{left:-70,right:70,top:120,bottom:-20,far:200});sun.shadow.camera.updateProjectionMatrix();
+sun.target.position.set(0,0,50);scene.add(sun,sun.target);
+
+// ---- ground: road, fan, range rings -------------------------------------------------------------------------
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(400,500),new THREE.MeshStandardMaterial({color:0x10161d,roughness:1}));
+ground.rotation.x=-Math.PI/2;ground.position.z=150;ground.receiveShadow=true;scene.add(ground);
+const road=new THREE.Mesh(new THREE.PlaneGeometry(14,500),new THREE.MeshStandardMaterial({color:0x1b232c,roughness:.95}));
+road.rotation.x=-Math.PI/2;road.position.set(0,0.01,150);road.receiveShadow=true;scene.add(road);
+const dash=new THREE.MeshBasicMaterial({color:0x4a5968});
+for(let z=-40;z<400;z+=9){
+ const d=new THREE.Mesh(new THREE.PlaneGeometry(.18,4),dash);d.rotation.x=-Math.PI/2;d.position.set(-3.5,.02,z);scene.add(d);
+ const d2=d.clone();d2.position.x=3.5;scene.add(d2);}
+for(const x of [-7,7]){const e=new THREE.Mesh(new THREE.PlaneGeometry(.18,500),dash);e.rotation.x=-Math.PI/2;e.position.set(x,.02,150);scene.add(e);}
+
+const fanGroup=new THREE.Group();scene.add(fanGroup);
+const ringLabels=[];
+function buildFan(){
+ fanGroup.clear();for(const l of ringLabels)l.el.remove();ringLabels.length=0;
+ // the fan opens towards +Z: angles measured from +Z towards +X
+ const shape=new THREE.Shape();shape.moveTo(0,0);
+ for(let i=0;i<=48;i++){const b=-A+2*A*i/48;shape.lineTo(Math.sin(b)*RM,Math.cos(b)*RM);}
+ shape.lineTo(0,0);
+ const fan=new THREE.Mesh(new THREE.ShapeGeometry(shape),new THREE.MeshBasicMaterial({color:0x2a6fb0,transparent:true,opacity:.10,depthWrite:false,side:THREE.DoubleSide}));
+ fan.rotation.x=Math.PI/2;fan.position.y=.03;fanGroup.add(fan);
+ const step=RM<=25?5:RM<=50?10:25,rings=[];for(let r=step;r<=RM-step/2;r+=step)rings.push(r);rings.push(RM);
+ const lm=new THREE.LineBasicMaterial({color:0x3d5a73});
+ for(const r of rings){const pts=[];for(let i=0;i<=48;i++){const b=-A+2*A*i/48;pts.push(new THREE.Vector3(Math.sin(b)*r,.05,Math.cos(b)*r));}
+  fanGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),lm));const el=document.createElement("div");el.className="lab";el.style.color="#5d7185";el.textContent=r+" m";
+  $("labels").appendChild(el);ringLabels.push({r,el});}
+ for(const b of [-A,A])fanGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,.05,0),
+  new THREE.Vector3(Math.sin(b)*RM,.05,Math.cos(b)*RM)]),lm));
+}
+
+// ---- rider --------------------------------------------------------------------------------------------------
+function makeRider(){
+ const g=new THREE.Group(),dark=new THREE.MeshStandardMaterial({color:0x222a33,roughness:.6}),
+  frame=new THREE.MeshStandardMaterial({color:0xd2dde8,metalness:.4,roughness:.4}),
+  vest=new THREE.MeshStandardMaterial({color:0xd8ff3a,emissive:0x3a4a00,roughness:.7});
+ for(const z of [-.55,.55]){const w=new THREE.Mesh(new THREE.TorusGeometry(.34,.04,8,24),dark);w.rotation.y=Math.PI/2;w.position.set(0,.34,z);g.add(w);}
+ const bar=new THREE.Mesh(new THREE.BoxGeometry(.05,.05,1.1),frame);bar.position.set(0,.62,0);bar.rotation.x=.12;g.add(bar);
+ const torso=new THREE.Mesh(new THREE.CapsuleGeometry(.17,.45,4,10),vest);torso.position.set(0,1.18,.08);torso.rotation.x=-.55;torso.castShadow=true;g.add(torso);
+ const head=new THREE.Mesh(new THREE.SphereGeometry(.13,16,12),new THREE.MeshStandardMaterial({color:0xe8edf2}));head.position.set(0,1.52,-.2);g.add(head);
+ const sensor=new THREE.Mesh(new THREE.BoxGeometry(.12,.08,.04),new THREE.MeshStandardMaterial({color:0x6fa8ff,emissive:0x1d4d8a}));
+ sensor.position.set(0,1.2,.34);g.add(sensor);
+ g.traverse(o=>{if(o.isMesh)o.castShadow=true;});return g;
+}
+scene.add(makeRider());
+
+// ---- cars ---------------------------------------------------------------------------------------------------
+const wheelGeo=new THREE.CylinderGeometry(.34,.34,.24,18);wheelGeo.rotateZ(Math.PI/2);
+const wheelMat=new THREE.MeshStandardMaterial({color:0x111418,roughness:.8});
+const glassMat=new THREE.MeshStandardMaterial({color:0x223344,metalness:.6,roughness:.15});
+const lampMat=new THREE.MeshStandardMaterial({color:0xfff6d8,emissive:0xfff0c0,emissiveIntensity:2});
+const tailMat=new THREE.MeshStandardMaterial({color:0x550000,emissive:0xff2020,emissiveIntensity:1.2});
+function makeCar(){
+ // built facing -Z (front of the car at -Z)
+ const g=new THREE.Group(),paint=new THREE.MeshStandardMaterial({color:BODY[0],metalness:.35,roughness:.45,transparent:true});
+ const body=new THREE.Mesh(new THREE.BoxGeometry(1.8,.62,4.3),paint);body.position.y=.62;g.add(body);
+ const cabin=new THREE.Mesh(new THREE.BoxGeometry(1.56,.52,2.2),glassMat);cabin.position.set(0,1.18,.25);g.add(cabin);
+ const roof=new THREE.Mesh(new THREE.BoxGeometry(1.5,.06,2.0),paint);roof.position.set(0,1.46,.3);g.add(roof);
+ for(const x of [-.82,.82])for(const z of [-1.35,1.35]){const w=new THREE.Mesh(wheelGeo,wheelMat);w.position.set(x,.34,z);g.add(w);}
+ for(const x of [-.6,.6]){const l=new THREE.Mesh(new THREE.BoxGeometry(.38,.14,.05),lampMat);l.position.set(x,.72,-2.16);g.add(l);
+  const t=new THREE.Mesh(new THREE.BoxGeometry(.34,.12,.05),tailMat);t.position.set(x,.74,2.16);g.add(t);}
+ const halo=new THREE.Mesh(new THREE.RingGeometry(3,3.4,40),new THREE.MeshBasicMaterial({color:RING[0],transparent:true,opacity:.8,side:THREE.DoubleSide,depthWrite:false}));
+ halo.rotation.x=-Math.PI/2;halo.position.y=.06;g.add(halo);
+ g.traverse(o=>{if(o.isMesh&&o!==halo)o.castShadow=true;});
+ const lab=document.createElement("div");lab.className="lab";$("labels").appendChild(lab);
+ return {g,paint,halo,lab,wheels:g.children.filter(o=>o.geometry===wheelGeo),yaw:0,init:false,fade:1,tMeas:null,stale:0,
+  pos:new THREE.Vector3(),vel:new THREE.Vector3(),draw:new THREE.Vector3(),spin:0};
+}
+const cars=new Map();
+
+// Raw detections are a fresh set of fixes every frame, so moving one dot per detection makes them twitch. Each
+// frame's fixes are drawn where they were measured and fade out over DOT_LIFE, which reads as a trace behind a
+// moving target. These are the radar's own numbers, unsmoothed.
+const DOT_LIFE=.5,DOT_MAX=96;
+const dotGeo=new THREE.SphereGeometry(.26,10,8),dots=[];
+function spawnDot(x,z,col,dim){
+ let d=dots.find(o=>o.life<=0);
+ if(!d){if(dots.length>=DOT_MAX)return;
+  d={m:new THREE.Mesh(dotGeo,new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,depthWrite:false})),life:0,dim:false};
+  scene.add(d.m);dots.push(d);}
+ d.m.position.set(x,.3,z);d.m.material.color.setHex(col);d.life=DOT_LIFE;d.dim=dim;d.m.visible=true;
+}
+function fadeDots(dt){for(const d of dots){if(d.life<=0){d.m.visible=false;continue;}
+ d.life-=dt;const k=Math.max(0,d.life)/DOT_LIFE;d.m.material.opacity=(d.dim?.3:.85)*k;d.m.scale.setScalar(.6+.4*k);}}
+
+// beyond-range arrows: a cone on the outer ring along the target's bearing, plus a label with its range
+const arrowGeo=new THREE.ConeGeometry(.9,2.4,12);arrowGeo.rotateX(Math.PI/2);
+const arrows=[];
+function arrowAt(i){while(arrows.length<=i){const m=new THREE.Mesh(arrowGeo,new THREE.MeshBasicMaterial({color:0xffffff}));
+ const lab=document.createElement("div");lab.className="lab";$("labels").appendChild(lab);scene.add(m);arrows.push({m,lab});}return arrows[i];}
+
+// ---- data: live event stream or simulated traffic ----------------------------------------------------------
+let S=null,lastMsg=0,es=null;
+function connect(){if(es)return;es=new EventSource("events");es.onmessage=m=>{lastMsg=Date.now();if(!demo)S=JSON.parse(m.data);};}
+const sim={t:0,next:0,cars:[
+ {id:1,x:95,y:-1.6,vx:-11,lane:-1.6},{id:2,x:160,y:1.9,vx:-17,lane:1.9},{id:3,x:30,y:-5.2,vx:6,lane:-5.2},{id:4,x:62,y:-1.4,vx:-4,lane:-1.4}]};
+const BIN=1.0;                                        // range bin at RRAI 3 (100 m preset); the radar quantises r
+const noisy=(x,y)=>{const r=Math.hypot(x,y),az=Math.atan2(y,x),rq=Math.round(r/BIN)*BIN,
+  a=az+(Math.random()-.5)*2.5*Math.PI/180;return [Math.cos(a)*rq,Math.sin(a)*rq];};
+function simStep(dt){
+ sim.t+=dt;
+ for(const c of sim.cars){c.x+=c.vx*dt;
+  if(c.id===1)c.y=c.x<25?c.lane-Math.min(1.8,(25-c.x)*.12):c.lane;              // swings out to pass the rider
+  if(c.x<-8||c.x>180){c.x=c.vx<0?150+Math.random()*40:5;c.vx=c.vx<0?-(8+Math.random()*12):5+Math.random()*4;c.y=c.lane;}}
+ if(sim.t<sim.next)return;                            // the pipeline publishes at 8 Hz, not once per drawn frame
+ sim.next=sim.t+0.125;
+ const tracks=[],targets=[];
+ for(const c of sim.cars){
+  if(c.x<0.5)continue;
+  const [mx,my]=noisy(c.x,c.y),r=Math.hypot(mx,my),vc=-c.vx*c.x/Math.hypot(c.x,c.y),ta=vc>0.3?r/vc:null;
+  const level=ta==null||r>60?0:ta<1.5?3:ta<3?2:ta<6?1:0;
+  tracks.push({id:c.id,status:r>90?"TENTATIVE":"CONFIRMED",coast:"NONE",x:mx,y:my,r,vc,az:Math.atan2(my,mx)*180/Math.PI,level,
+   side:c.y<0?"LEFT":"RIGHT",ta});
+  const [tx,ty]=noisy(c.x,c.y);
+  targets.push({cls:vc>0?"APPROACHING":"RECEDING_MOVER",x:tx,y:ty,r:Math.hypot(tx,ty)});}
+ for(let i=0;i<3;i++){const [x,y]=noisy(12+i*21,-6.5);targets.push({cls:"STATIONARY",x,y,r:Math.hypot(x,y)});}
+ const top=tracks.reduce((m,k)=>k.level>(m?m.level:0)?k:m,null);
+ S={live:true,age_s:0,t:sim.t,tracks,targets,decision:{lvl:top?top.level:0,side:top?top.side:"NONE",hs:"OK"},session:"demo"};
+}
+
+// ---- camera presets -----------------------------------------------------------------------------------------
+function placeCamera(){
+ const k=RM/100;
+ if(cam==="top"){camera.position.set(0,150*k+20,RM*.62);controls.target.set(0,0,RM*.42);}
+ else if(cam==="mirror"){camera.position.set(0,2.4,-3.5);controls.target.set(0,1,20);}
+ else {camera.position.set(0,26*k+8,RM*1.02+10);controls.target.set(0,0,RM*.12);}
+ controls.update();
+ document.querySelectorAll("[data-cam]").forEach(b=>b.classList.toggle("on",b.dataset.cam===cam));
+}
+document.querySelectorAll("[data-cam]").forEach(b=>b.onclick=()=>{cam=b.dataset.cam;try{localStorage.setItem("gf.cam3d",cam);}catch(e){}placeCamera();});
+$("rm").value=RM;$("rmv").textContent=RM+" m";
+$("rm").addEventListener("input",e=>{RM=+e.target.value;$("rmv").textContent=RM+" m";try{localStorage.setItem("gf.rm",RM);}catch(e){}buildFan();placeCamera();});
+function setDemo(on){demo=on;$("demo").classList.toggle("on",demo);if(!demo)S=null;}
+$("demo").onclick=()=>setDemo(!demo);
+
+// ---- smoothing ----------------------------------------------------------------------------------------------
+// The drawn car is not the raw fix: each track carries a course (position + velocity), an alpha-beta filter with
+// the radar's own numbers. Between the 8 Hz updates the car is dead-reckoned along that course, so it rolls at
+// screen rate instead of stepping; each update nudges the course rather than teleporting the car. ALPHA is how
+// much of a disagreement is taken as position, BETA how much is taken as a change of course. The Doppler speed is
+// the sensor's most accurate number, so the along-sight part of the course is pulled towards it separately (DOPP).
+// Display only: nothing here feeds the warning logic, which runs on the Pi from the raw tracks.
+const ALPHA=.38,BETA=.10,DOPP=.35,VMAX=70,JUMP=9;      // JUMP m: a disagreement this big is a new car, not drift
+const TAU=.20;                                         // the drawn car eases onto the course over this long
+function reckon(c,dt){                                 // between updates: carry on along the course
+ if(!c.init)return;
+ c.pos.addScaledVector(c.vel,dt);
+ if(c.stale>0.7)c.vel.multiplyScalar(Math.exp(-dt*1.5));   // nothing heard for a while: coast to a stop, do not fly off
+ // A correction moves the course by up to ALPHA of the disagreement at once, which on its own would show as a
+ // twitch. The drawn car follows the course rather than jumping to it: it carries the same velocity and closes
+ // the remaining gap over TAU, which takes roughly 10x the jerk out of the motion for about 0.2 m more lag.
+ c.draw.addScaledVector(c.vel,dt).lerp(c.pos,1-Math.exp(-dt/TAU));
+}
+function correct(c,m,vc,dtm){                          // a fresh radar fix
+ const res=m.clone().sub(c.pos);
+ if(res.length()>JUMP){c.pos.copy(m);c.draw.copy(m);c.vel.multiplyScalar(.3);return;}
+ c.pos.addScaledVector(res,ALPHA);
+ c.vel.addScaledVector(res,BETA/Math.max(dtm,.04));
+ if(vc!=null&&isFinite(vc)){                           // pull the along-sight speed towards the measured Doppler
+  const u=c.pos.clone().setY(0);if(u.lengthSq()>1e-4){u.normalize();
+   c.vel.addScaledVector(u,((-vc)-c.vel.dot(u))*DOPP);}}
+ if(c.vel.length()>VMAX)c.vel.setLength(VMAX);
+}
+
+// ---- per-frame update ---------------------------------------------------------------------------------------
+const tmp=new THREE.Vector3();let tDots=null;
+function project(v,el){tmp.copy(v).project(camera);
+ if(tmp.z>1||tmp.z<-1||Math.abs(tmp.x)>1.05||Math.abs(tmp.y)>1.05){el.style.display="none";return;}
+ el.style.display="";el.style.left=((tmp.x+1)/2*innerWidth)+"px";el.style.top=((1-tmp.y)/2*innerHeight)+"px";}
+const toScene=(x,y)=>new THREE.Vector3(y,0,x);
+
+function update(dt,now){
+ const tracks=(S&&S.tracks)||[],seen=new Set();let ai=0;
+ const T=S&&S.t!=null?S.t:null;                        // the pipeline's own clock: one correction per radar frame
+ for(const k of tracks){if(k.x==null)continue;
+  if(Math.hypot(k.x,k.y)>RM){const b=Math.max(-A,Math.min(A,Math.atan2(k.y,k.x))),a=arrowAt(ai++);
+   a.m.visible=true;a.m.position.set(Math.sin(b)*(RM-1.5),1.2,Math.cos(b)*(RM-1.5));a.m.lookAt(Math.sin(b)*RM*2,1.2,Math.cos(b)*RM*2);
+   a.m.material.color.setHex(RING[k.level||0]);a.lab.textContent="#"+k.id+" "+f(Math.hypot(k.x,k.y),0)+" m";
+   a.lab.style.color=LVFG[k.level||0];tmp.copy(a.m.position).setY(3);project(tmp,a.lab);continue;}
+  seen.add(k.id);let c=cars.get(k.id);if(!c){c=makeCar();cars.set(k.id,c);scene.add(c.g);}
+  const m=toScene(k.x,k.y);
+  if(!c.init){                                         // first fix: start on the measurement, heading from the Doppler
+   c.pos.copy(m);const u=m.clone().setY(0);
+   if(u.lengthSq()>1e-4)c.vel.copy(u.normalize().multiplyScalar(-(k.vc||0)));
+   c.draw.copy(m);c.init=true;c.tMeas=T;c.yaw=k.vc>=0?0:Math.PI;
+  }else if(T==null||T!==c.tMeas){                      // a new frame of radar: nudge the course towards it
+   correct(c,m,k.vc,T==null?.125:Math.min(.5,Math.max(.02,T-c.tMeas)));c.tMeas=T;
+  }
+  c.stale=0;c.k=k;}
+ for(let i=ai;i<arrows.length;i++){arrows[i].m.visible=false;arrows[i].lab.style.display="none";}
+ for(const [id,c] of cars){
+  const alive=seen.has(id);c.fade+=((alive?1:0)-c.fade)*Math.min(1,dt*5);
+  if(!alive&&c.fade<.03){scene.remove(c.g);c.lab.remove();cars.delete(id);continue;}
+  if(!alive)c.stale+=dt;
+  reckon(c,dt);c.g.position.copy(c.draw);
+  const sp=c.vel.length();
+  // heading: along the course when it is moving, otherwise from the closing speed; front of the car is -Z
+  let want=c.yaw;if(sp>1.5)want=Math.atan2(-c.vel.x,-c.vel.z);else if(c.k)want=c.k.vc>=0?0:Math.PI;
+  let d=want-c.yaw;d=Math.atan2(Math.sin(d),Math.cos(d));c.yaw+=d*Math.min(1,dt*3);c.g.rotation.y=c.yaw;
+  c.spin-=sp*dt/.34;for(const w of c.wheels)w.rotation.x=c.spin;
+  const k=c.k,lvl=k.level||0,coast=k.status==="COASTING";
+  c.paint.color.setHex(BODY[lvl]);c.paint.opacity=(coast?.45:k.status==="TENTATIVE"?.7:1)*c.fade;
+  c.halo.material.color.setHex(RING[lvl]);
+  c.halo.material.opacity=(lvl===3?.55+.45*Math.sin(now/90):lvl?.75:.25)*c.fade;
+  c.halo.scale.setScalar(lvl===3?1+.08*Math.sin(now/90):1);
+  c.lab.textContent="#"+k.id+" · "+f(k.r,0)+" m · "+f(k.vc,1)+" m/s"+(k.ta!=null&&lvl?" · "+f(k.ta,1)+" s":"")+(coast?" · coasting":"");
+  c.lab.style.color=LVFG[lvl];c.lab.style.opacity=c.fade;
+  tmp.copy(c.draw).setY(2.4);project(tmp,c.lab);}
+ for(const l of ringLabels){tmp.set(Math.sin(A)*l.r,.3,Math.cos(A)*l.r);project(tmp,l.el);}
+ if(T!==tDots){tDots=T;                                // one set of dots per radar frame, not per drawn frame
+  for(const t of (S&&S.targets)||[]){if(t.x==null||Math.hypot(t.x,t.y)>RM)continue;
+   spawnDot(t.y,t.x,CLS[t.cls]||0x7b8a99,!CLS[t.cls]);}}
+ fadeDots(dt);
+}
+
+function header(){
+ const up=demo||Date.now()-lastMsg<2500;chip($("conn"),demo?"demo":up?"connected":"no link to the Pi",demo?"warn":up?"ok":"bad");
+ const d=(S&&S.decision)||{},l=d.lvl||0;$("lvl").textContent=LV[l]+(l&&d.side&&d.side!=="NONE"?" · "+d.side:"");
+ $("lvl").style.color=LVFG[l];$("lvl").style.borderColor=l?LVFG[l]:"";
+ chip($("src"),demo?"simulated traffic":S?(S.session||"no session")+(S.age_s!=null?" · "+f(S.age_s*1000,0)+" ms":""):"waiting…");
+ const empty=!demo&&(!S||!(S.tracks||[]).length);
+ $("msg").innerHTML=empty?(S?"no tracks right now":"waiting for the pipeline…")+"<br><small>tap <b>demo traffic</b> to see simulated cars</small>":"";
+}
+
+function resize(){const w=innerWidth,h=innerHeight;renderer.setSize(w,h,false);camera.aspect=w/h;
+ camera.fov=w<h?62:45;camera.updateProjectionMatrix();}
+addEventListener("resize",resize);
+
+buildFan();resize();placeCamera();setDemo(demo);connect();
+let last=performance.now(),hdr=0;
+renderer.setAnimationLoop(now=>{const dt=Math.min(.1,(now-last)/1000);last=now;
+ if(demo)simStep(dt);update(dt,now);controls.update();renderer.render(scene,camera);
+ if(now-hdr>250){hdr=now;header();}});
+</script>
+</body></html>

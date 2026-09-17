@@ -16,9 +16,9 @@ No MCU board is attached yet, so nothing vibrates or lights up: the phone page i
 
 ## Reaching the page
 
-1. Turn on the iPhone hotspot. The Pi joins it on its own (saved profile "iPhone", autoconnect on).
+1. Turn on the phone's hotspot. The Pi joins a saved profile on its own (autoconnect on).
 2. Open **http://raspberrypi.local:8080/** in Safari on the phone. If `.local` does not resolve, use the Pi's
-   address on the hotspot (it was `172.20.10.2`; it can change) or Tailscale (`100.124.164.21`).
+   address on the hotspot (`hostname -I` on the Pi; it changes between sessions) or its VPN address if you use one.
 
 The header shows: **connected** (the page is receiving updates), **health** (OK / DEGRADED / OFFLINE, from the
 pipeline's decisions), **age** ("live · N ms behind"; "stale" means the pipeline is not recording) and the

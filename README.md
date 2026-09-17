@@ -52,7 +52,18 @@ python3 -m venv --system-site-packages .venv && .venv/bin/pip install scipy pyte
 * no track dies because measurements stopped; no threat resolves by disappearance; the alert channel is
   never asserted for a fault; heartbeats and `WATCHDOG=1` come from the pipeline loop only.
 
+## Not a safety device
+This is an unfinished prototype, published so the work can be read and reused. It has not been through the
+field testing in `docs/field_testing.md`, and open items are listed in `docs/UNVERIFIED.md`. It cannot see
+anything that is not moving relative to the rider, it has no lane semantics, and a silent system never means
+the road is clear. Do not rely on it to decide whether it is safe to move, and keep riding as though it were
+not there. No warranty: see LICENSE.
+
 ## Status
 Stages 0–5 complete. Stage 6 (hardware bring-up) in progress: K-LD7 timing measured, the BNO085 running on
 l02's own SPI transport (gyro ~200 Hz), the field web app and both systemd services in place. Before riding,
 work through `docs/field_testing.md`; open items are in `docs/UNVERIFIED.md`.
+
+## Licence
+MIT, see [LICENSE](LICENSE). The copyright line names the GitHub account; change it if you want your legal
+name there instead.

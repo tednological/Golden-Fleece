@@ -20,3 +20,4 @@ docs/*.pdf
 9_warning_policy/
 10_mcu_link/
 11_web_app/
+.claude/

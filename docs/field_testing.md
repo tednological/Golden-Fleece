@@ -9,8 +9,10 @@ This is a test rig, not a safety device yet: see "Known limits" at the end.
 |---|---|---|
 | `goldenfleece` | The pipeline: K-LD7 + BNO085 → l03..l09 → MCU link. Records every session to `~/golden_fleece_recordings`. | `deploy/goldenfleece.service` |
 | `goldenfleece-web` | The field web app on port 8080. Follows the newest recording, replays l03..l09 for display, and shows the pipeline's own decisions. | `deploy/goldenfleece-web.service` |
+| `goldenfleece-camera` | Records the USB camera into `~/golden_fleece/Camera Footage` unless stopped from the web app (see "Camera" below). | `deploy/goldenfleece-camera.service` |
 
-Both start at boot. They are separate processes, so the web app cannot slow down or stop the pipeline.
+All three start at boot. They are separate processes, so neither the web app nor the camera can slow down or stop
+the pipeline.
 No MCU board is attached yet, so nothing vibrates or lights up: the phone page is the only display.
 `MCU_LINK_DOWN` is informational and does not change health or warnings.
 
@@ -27,15 +29,40 @@ session file. The banner is the pipeline's current warning with its side and arr
 ## Service control
 
 ```bash
-sudo systemctl status goldenfleece goldenfleece-web      # both should be "active (running)"
+sudo systemctl status goldenfleece goldenfleece-web goldenfleece-camera   # all should be "active (running)"
 journalctl -u goldenfleece -f                            # pipeline log: health transitions, link, latency
+journalctl -u goldenfleece-camera -f                     # camera log: files started, stops, camera faults
 sudo systemctl stop goldenfleece                         # before bench probes: it owns the radar port and the IMU
 sudo systemctl start goldenfleece
-sudo systemctl disable goldenfleece goldenfleece-web     # stop starting at boot
+sudo systemctl disable goldenfleece goldenfleece-web goldenfleece-camera   # stop starting at boot
 ```
 
 Running `tools/run_pipeline.py`, `tools/kld7_probe.py` or `tools/bno085_probe.py` by hand while the service is
 up makes two processes fight over the radar and the IMU. Stop the service first.
+
+## Camera
+
+The USB camera ("HD USB Camera", `32e4:9230`, no microphone) records all the time: the recorder starts at boot and
+keeps going unless someone presses **Stop recording** on the page's Camera card. A stop lasts until someone presses
+**Start recording**, or until the Pi restarts (every boot records). The header chip shows **● REC** and the running
+time while it records; tap it to jump to the card. From a shell:
+`.venv/bin/python tools/camera_recorder.py --status` (or `--off` / `--on`).
+
+- Files: `~/golden_fleece/Camera Footage/camera_<start time>_<run id>.mkv`, one per 5 minutes, cut on the clock.
+  The run id keeps two runs apart even when the Pi boots with a stale clock, so no file is ever overwritten. The
+  first file after a boot may carry the clock's pre-sync time, as the pipeline's session files do.
+- Format: the camera's own 1920x1080 MJPEG at 30 fps, copied without re-encoding (0.02 cores; measured next to the
+  live pipeline with no change in its latency, where software H.264 took 1.2 cores and raised the pipeline's
+  header-to-processing p99 from 1.0 to 2.5 ms). Play the files in VLC or mpv; QuickTime and phone browsers
+  cannot play MJPEG in MKV.
+- Space: about 22-25 GB an hour, so the card holds roughly 8 hours of footage. Recording **pauses by itself** when
+  less than 20 GB is free (the card the pipeline records to must never fill) and resumes once space is freed. The
+  page's Camera card shows the free space and hours left. Nothing is ever deleted automatically: copy footage off
+  and delete it.
+- Pulling the battery loses about the last 2 s of footage: the recorder syncs the open file every 2 s, and an MKV
+  cut short still plays.
+- Settings (size, frame rate, file length, free-space floor) are in `config/camera.yaml`; restart the
+  `goldenfleece-camera` service after changing them.
 
 ## Before the first ride: bench accuracy checks
 
@@ -75,6 +102,11 @@ Stop-and-ask rules apply: if a sign is wrong, report it. Never flip a sign in co
 
 The last one replays a session on the phone at real-time pace (`--speed 4` for faster), on port 8081 so the
 live page keeps running.
+
+Camera footage from the ride is in `~/golden_fleece/Camera Footage`; match it to the session by the start time
+in the file names. Copy it off (for example `scp -r "raspberrypi.local:golden_fleece/Camera Footage" .` on a
+laptop; the quotes matter, the folder name has a space) and delete what you do not need: at 22-25 GB an hour the
+card fills after about 8 hours of footage, and recording then pauses.
 
 ## Known limits for these tests
 

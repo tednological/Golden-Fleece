@@ -10,6 +10,9 @@ It is a separate process that never talks to the pipeline.  It follows the newes
 live pipeline computed, and a slow or crashed web app cannot touch the warnings.  The warning shown is the
 pipeline's own recorded decision (``cmd`` records), not a recomputation.  Radar coordinates come from l03,
 the single conversion site, so what is drawn on the rider's left is what the pipeline believes is there.
+
+The camera card shows what the camera recorder (tools/camera_recorder.py, another separate process) reports in its
+status file, and its button writes the recorder's control file: ``POST /camera {"recording": true|false}``.
 """
 from __future__ import annotations
 
@@ -32,6 +35,8 @@ from goldenfleece.config import load_config                                  # n
 from goldenfleece.orchestrator.pipeline import Pipeline                      # noqa: E402
 from goldenfleece.orchestrator.recording import imu_from_rec, radar_from_rec  # noqa: E402
 from goldenfleece.types import HealthBits, ImuKind                           # noqa: E402
+from tools.camera_recorder import (CameraConfig, CameraConfigError, load_camera_config,   # noqa: E402
+                                   read_status, set_recording_wanted)
 
 DEG = 180.0 / math.pi
 IMU_HIST_S = 8.0                 # chart window
@@ -323,6 +328,39 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._send(404, "text/plain", b"not found")
 
+    def do_POST(self) -> None:  # noqa: N802
+        if self.path.split("?", 1)[0] != "/camera":
+            self._send(404, "text/plain", b"not found")
+            return
+        cam = self.server.camera
+        if cam is None:
+            self._json(503, {"error": "no camera configured"})
+            return
+        # A JSON body cannot be sent cross-site without a CORS preflight, which this server never grants, so some
+        # other web page open on the phone cannot switch the camera off.
+        if self.headers.get("Content-Type", "").split(";")[0].strip().lower() != "application/json":
+            self._json(415, {"error": "send application/json"})
+            return
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+            body = json.loads(self.rfile.read(n) if 0 < n <= 1024 else b"")
+            recording = body["recording"]
+            if not isinstance(recording, bool):
+                raise TypeError
+        except (ValueError, KeyError, TypeError):
+            self._json(400, {"error": 'expected {"recording": true} or {"recording": false}'})
+            return
+        try:
+            set_recording_wanted(cam, recording, f"the web app ({self.client_address[0]})")
+        except OSError as e:
+            self._json(500, {"error": f"could not write {cam.control_path}: {e}"})
+            return
+        self.server.invalidate()                            # the next event already carries the new wish
+        self._json(200, {"ok": True, "camera": read_status(cam)})
+
+    def _json(self, code: int, obj: Dict[str, Any]) -> None:
+        self._send(code, "application/json", json.dumps(obj, separators=(",", ":"), allow_nan=False).encode())
+
     def _send(self, code: int, ctype: str, body: bytes) -> None:
         self.send_response(code)
         self.send_header("Content-Type", ctype)
@@ -353,10 +391,11 @@ class WebServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, addr: Tuple[str, int], state: LiveState, live: bool) -> None:
+    def __init__(self, addr: Tuple[str, int], state: LiveState, live: bool, camera: Optional[CameraConfig] = None) -> None:
         super().__init__(addr, Handler)
         self.state = state
         self.live = live
+        self.camera = camera
         self._cache: Tuple[float, bytes] = (-1.0, b"{}")
         self._cache_lock = threading.Lock()
 
@@ -366,8 +405,13 @@ class WebServer(ThreadingHTTPServer):
             now = time.monotonic()
             if now - self._cache[0] >= UPDATE_S / 2:
                 snap = self.state.snapshot(time.clock_gettime(time.CLOCK_MONOTONIC), self.live)   # the pipeline's clock
+                snap["camera"] = read_status(self.camera) if self.camera else None
                 self._cache = (now, json.dumps(snap, separators=(",", ":"), allow_nan=False).encode())
             return self._cache[1]
+
+    def invalidate(self) -> None:
+        with self._cache_lock:
+            self._cache = (-1.0, self._cache[1])
 
 
 def main(argv=None) -> int:
@@ -378,13 +422,20 @@ def main(argv=None) -> int:
     ap.add_argument("--recording", default=None, help="review this session file instead of following the live one")
     ap.add_argument("--speed", type=float, default=1.0, help="review pace; 0 = as fast as possible")
     ap.add_argument("--from-start", action="store_true", help="when joining a live session, process all of it")
+    ap.add_argument("--camera-config", default=str(ROOT / "config" / "camera.yaml"),
+                    help="the camera recorder's config (independent of --config, so presets keep the same camera)")
     a = ap.parse_args(argv)
     cfg = load_config(a.config)
+    try:
+        camera: Optional[CameraConfig] = load_camera_config(a.camera_config)
+    except CameraConfigError as e:
+        print(f"camera: {e}; the page shows no camera", flush=True)
+        camera = None
     state = LiveState(cfg)
     rec_dir = Path(str(cfg.pipeline.recording.dir))
     follower = Follower(state, rec_dir=rec_dir, file=a.recording, speed=a.speed, from_start=a.from_start)
     follower.start()
-    srv = WebServer((a.host, a.port), state, live=a.recording is None)
+    srv = WebServer((a.host, a.port), state, live=a.recording is None, camera=camera)
     what = f"reviewing {a.recording}" if a.recording else f"following the newest session in {rec_dir}"
     print(f"Golden Fleece web app on http://{a.host}:{a.port}/ ({what})", flush=True)
     try:
@@ -431,10 +482,18 @@ td.l,th.l{text-align:left} .scroll{overflow-x:auto}
 .zoom input{flex:1;accent-color:#6fa8ff} .zoom output{min-width:44px;text-align:right;color:var(--text)}
 details summary{cursor:pointer;padding:9px 12px;color:var(--dim);font-size:11px;letter-spacing:.12em;text-transform:uppercase}
 details ol{margin:0;padding:0 16px 12px 32px} details li{margin:5px 0}
+a.chip{text-decoration:none} .chip.rec{color:#fff;background:#a61b1b;border-color:#ff5c5c}
+.col{display:flex;flex-direction:column;gap:12px;min-width:0}
+.cambar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin-bottom:10px}
+.cambtn{font:650 15px system-ui,-apple-system,sans-serif;padding:11px 18px;min-width:200px;border-radius:8px;cursor:pointer;
+ border:1px solid #2f6f4f;background:#15392a;color:#b9f5d8}
+.cambtn.stop{border-color:#ff5c5c;background:#6d1414;color:#ffe1e1} .cambtn:disabled{opacity:.5;cursor:default}
+#camstate{font:13px var(--mono)} .camerr{color:var(--bad);font-size:13px} .camerr:not(:empty){margin-top:8px}
 </style></head><body>
 <header><h1>Golden Fleece · field view</h1>
  <span id="conn" class="chip">connecting…</span><span id="hs" class="chip">health –</span><span id="age" class="chip">–</span>
- <span id="sess" class="chip">–</span><a href="3d" style="color:#6fa8ff;font-size:13px">3D view (prototype)</a></header>
+ <span id="sess" class="chip">–</span><a id="cam" class="chip" href="#camcard">camera –</a>
+ <a href="3d" style="color:#6fa8ff;font-size:13px">3D view (prototype)</a></header>
 <div id="banner"><div id="lvl">–</div><div id="side"></div><div id="bsub">waiting for the pipeline…</div></div>
 <main>
  <section class="card"><h2>Radar · top view · rider at the top, riding up the screen</h2>
@@ -443,8 +502,13 @@ details ol{margin:0;padding:0 16px 12px 32px} details li{margin:5px 0}
   <div class="legend"><span><i style="background:#ff9a3c"></i>approaching</span><span><i style="background:#6fa8ff"></i>receding mover</span>
    <span><i style="background:#7b8a99"></i>stationary</span><span><i style="border:1px solid #7b8a99"></i>rejected</span>
    <span>ring = track, colour = threat level, dashed = coasting</span><span>▲ at the edge = beyond the view range</span></div></section>
+ <div class="col">
  <section class="card"><h2>IMU</h2><div class="body"><div class="kv" id="imukv"></div>
   <canvas id="gchart" style="height:90px;margin-top:10px"></canvas><canvas id="achart" style="height:64px;margin-top:6px"></canvas></div></section>
+ <section class="card" id="camcard"><h2>Camera</h2><div class="body">
+  <div class="cambar"><button id="cambtn" class="cambtn" type="button" disabled>camera</button><span id="camstate" class="muted">waiting for the recorder…</span></div>
+  <div class="kv" id="camkv"></div><div class="camerr" id="camerr"></div></div><div class="note" id="camnote"></div></section>
+ </div>
  <section class="card"><h2>Radar targets this frame (decoded by l03)</h2><div class="scroll"><table id="tg"></table></div>
   <div class="note">v: + = moving away. az and y: + = rider's right. Raw angle is in 0.01° with + = the sensor's right = the rider's LEFT
    (datasheet sign, still to be confirmed on the bench). Only moving things appear: the sensor is a Doppler radar.</div></section>
@@ -477,7 +541,7 @@ let RM=100;try{const v=+localStorage.getItem("gf.rm");if(v>=5&&v<=100)RM=v;}catc
 $("rm").value=RM;$("rmv").textContent=RM+" m";
 $("rm").addEventListener("input",e=>{RM=+e.target.value;$("rmv").textContent=RM+" m";
  try{localStorage.setItem("gf.rm",RM);}catch(e){}if(S)scope();});
-function render(){banner();header();scope();targets();tracks();imu();health();}
+function render(){banner();header();scope();targets();tracks();imu();health();camera();}
 function banner(){const d=S.decision||{},l=d.lvl||0;
  $("banner").style.background=LVBG[l];$("lvl").textContent=LV[l];$("lvl").style.color=LVFG[l];
  $("side").textContent=l?(SIDE[d.side]||d.side):"";$("side").style.color=LVFG[l];
@@ -550,6 +614,39 @@ function health(){const d=S.decision||{},fr=S.frame||{},e=S.ego||{};
   ["ego-motion",e.valid?`valid · ${f(e.speed,1)} m/s (${(e.source||"").toLowerCase()})`:`invalid (${(e.reason||"–").toLowerCase().replaceAll("_"," ")})`],
   ["power",S.power_flags?`0x${S.power_flags.toString(16)} (under-voltage or throttling)`:"ok"],
   ["records",`${S.records} (${S.errors} errors)${S.last_error?" · "+S.last_error:""}`],["radar fw",S.fw||"–"],["git",S.git||"–"]]);}
+const CAMST={recording:"recording",starting:"starting…",stopping:"stopping…",off:"off",no_camera:"camera not found",
+ low_disk:"paused: card nearly full",error:"error",down:"recorder not running"};
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const hms=s=>{s=Math.max(0,Math.floor(s||0));const p=v=>String(v).padStart(2,"0"),h=Math.floor(s/3600),m=Math.floor(s/60)%60;
+ return h?`${h}:${p(m)}:${p(s%60)}`:`${m}:${p(s%60)}`;};
+const gb=b=>b==null?"–":(b/1e9).toFixed(b<1e10?1:0)+" GB";
+let camBusy=false,camErr="";
+function camera(){const c=S&&S.camera,el=$("cam"),btn=$("cambtn");
+ $("camcard").hidden=!c;if(!c){chip(el,"no camera","");return;}
+ const st=c.state||"down",rec=st==="recording";
+ if(rec)chip(el,"● REC "+hms(c.elapsed_s),"rec");else if(st==="off")chip(el,"camera off","");
+ else if(st==="starting"||st==="stopping")chip(el,"camera "+CAMST[st],"warn");else chip(el,"camera: "+(CAMST[st]||st),"bad");
+ // the button switches what is wanted; the line next to it says what the recorder is actually doing
+ btn.textContent=c.want?"■ Stop recording":"● Start recording";btn.className="cambtn"+(c.want?" stop":"");btn.disabled=camBusy;
+ const applying=st!=="down"&&c.applied_want!=null&&c.applied_want!==c.want?" · applying…":"";
+ $("camstate").textContent=(rec?`● recording ${hms(c.elapsed_s)} · ${f(c.fps,1)} fps`:CAMST[st]||st)+applying;
+ $("camstate").style.color=rec?"#ff8080":st==="off"?"var(--dim)":"var(--warn)";
+ const room=c.rate_bps&&c.free_bytes!=null?Math.max(0,(c.free_bytes-c.min_free_bytes)/c.rate_bps/3600):null;
+ kv($("camkv"),[["state",esc(c.detail||(CAMST[st]||st))],
+  [rec||st==="starting"||st==="stopping"?"file":"last file",c.file?`${esc(c.file)} · ${gb(c.file_bytes)}`:"–"],["folder",esc(c.dir)],
+  ["card",`${gb(c.free_bytes)} free`+(room!=null?` · room for about ${f(room,room<10?1:0)} h more`:"")+` · pauses below ${gb(c.min_free_bytes)}`],
+  ["camera",esc(c.mode)]]);
+ $("camerr").textContent=camErr;
+ $("camnote").textContent=`Records all the time: it starts at every boot and keeps going until stopped here. A stop lasts until `+
+  `someone starts it again or the Pi restarts. One file per ${Math.round((c.segment_s||300)/60)} min; recording pauses by itself `+
+  `while the card has less than ${gb(c.min_free_bytes)} free, so the pipeline can always record. Nothing is ever deleted.`;}
+$("cambtn").addEventListener("click",async()=>{const c=S&&S.camera;if(!c||camBusy)return;const want=!c.want;
+ if(!want&&!confirm("Stop recording the camera?\n\nIt stays off until someone starts it again here, or the Pi restarts."))return;
+ camBusy=true;camErr="";camera();
+ try{const r=await fetch("camera",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({recording:want})});
+  const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||"HTTP "+r.status);S.camera=j.camera;}
+ catch(e){camErr="Could not switch the camera: "+e.message;}
+ finally{camBusy=false;camera();}});
 connect();
 </script></body></html>
 """

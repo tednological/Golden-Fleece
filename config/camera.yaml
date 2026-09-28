@@ -1,0 +1,28 @@
+version: 1
+# USB camera recorder (tools/camera_recorder.py, deploy/goldenfleece-camera.service).  The footage is for reviewing
+# rides: nothing in the pipeline reads the camera.
+
+# "HD USB Camera" 32e4:9230 (UVC, no microphone), found 2026-09-28 on /dev/video8.  The by-id path survives a
+# change of USB port and re-enumeration.
+device: /dev/v4l/by-id/usb-HD_USB_Camera_HD_USB_Camera-video-index0
+
+# The camera's own MJPEG frames are copied into the files, never re-encoded.  Measured 2026-09-28 next to the live
+# pipeline: copying costs 0.02 cores and leaves its header-to-processing p99 at 0.99 ms; software H.264 (the Pi 5
+# has no hardware encoder) took 1.2 cores and raised that p99 to 2.5 ms.  The price is size: 49-56 Mbit/s, about
+# 22-25 GB an hour at 1080p30.
+# MJPEG modes of this camera: 1920x1080@30, 1280x1024@30, 1024x768@30, 1280x720@60, 800x600@60, 640x480@120.
+input_format: mjpeg
+video_size: 1920x1080
+framerate: 30
+
+footage_dir: Camera Footage       # relative to the repo root; git ignores it
+segment_s: 300                    # one file per 5 minutes, cut on the clock (..:00, ..:05); about 2 GB each
+min_free_gb: 20                   # recording pauses below this much free space and resumes once space is freed,
+                                  # so footage never fills the card the pipeline records to.  Nothing is deleted.
+sync_period_s: 2.0                # fdatasync the open file this often: pulling the battery loses about this much
+                                  # footage, instead of the ~30 s the kernel would otherwise still hold in memory
+stall_s: 10.0                     # no new frame for this long: ffmpeg is restarted
+
+# control.json (the web app's button) and status.json live here.  /tmp is emptied at boot, so recording is on after
+# every boot, and "off" lasts until someone turns it back on or the Pi restarts.
+runtime_dir: /tmp/goldenfleece_camera

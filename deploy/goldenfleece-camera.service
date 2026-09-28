@@ -1,0 +1,25 @@
+# Golden Fleece camera recorder — systemd unit (a separate process: the pipeline never depends on it)
+# Install: sudo cp deploy/goldenfleece-camera.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now goldenfleece-camera
+[Unit]
+Description=Golden Fleece camera recorder (USB camera into "Camera Footage", start/stop from the web app)
+After=local-fs.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=ted
+Group=ted
+SupplementaryGroups=video
+WorkingDirectory=/home/ted/golden_fleece
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/ted/golden_fleece/.venv/bin/python /home/ted/golden_fleece/tools/camera_recorder.py
+Restart=always
+RestartSec=2
+# SIGTERM to the recorder only: it stops ffmpeg with SIGINT so the file being written is finished properly.
+KillMode=mixed
+TimeoutStopSec=15
+# Below the pipeline, like the web app.  ffmpeg only copies the camera's MJPEG frames (about 0.02 cores).
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

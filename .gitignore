@@ -4,6 +4,8 @@ __pycache__/
 .pytest_cache/
 .hypothesis/
 recordings/
+Camera Footage/
+*.mkv
 *.jsonl
 *.jsonl.gz
 # pre-existing, not part of this package

@@ -15,6 +15,19 @@ journalctl -u goldenfleece -f
 ```
 `WATCHDOG=1` is sent **from the pipeline loop on progress** (`goldenfleece/orchestrator/runner.py`, `_watchdog`), rate-limited to 0.5 s; a stalled loop is restarted by systemd within 2 s, and the restarted process announces `PIPELINE_RESTARTING` to the MCU before anything else (the MCU is already in FALLBACK from the heartbeat stall, ≤ 0.25 s after the hang).
 
+## Camera recorder
+`deploy/goldenfleece-camera.service` runs `tools/camera_recorder.py` (settings in `config/camera.yaml`), a separate
+process at `Nice=10` like the web app; the pipeline never reads the camera.
+```bash
+sudo cp deploy/goldenfleece-camera.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now goldenfleece-camera
+sudo systemctl restart goldenfleece-web      # the page's camera card and button come with this version of web_app.py
+journalctl -u goldenfleece-camera -f
+```
+Recording is on at every boot; the web app's button (or `tools/camera_recorder.py --off` / `--on`) writes
+`/tmp/goldenfleece_camera/control.json`, which the recorder applies within 0.5 s, and the page reads the recorder's
+`status.json` beside it. See "Camera" in `docs/field_testing.md`.
+
 ## Pi hardware watchdog (documented, not required)
 In `/etc/systemd/system.conf` set `RuntimeWatchdogSec=15` and reboot; systemd then pets the BCM watchdog and a kernel hang reboots the Pi. This does not help the rider directly (the MCU already reports "warnings offline"); it shortens the outage.
 

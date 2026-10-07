@@ -8,7 +8,7 @@
 # own THOF, so it wins, and the change list printed below shows the value that was used.
 #
 # Builds /tmp/goldenfleece_preset_NAME from config/ plus the overrides (tools/config_overlay.py validates it),
-# stops the goldenfleece service (it owns the radar port and the IMU), runs the pipeline in the foreground
+# stops the goldenfleece service (it owns the radar port, the IMU and the motor pins), runs the pipeline in the foreground
 # with that config, and starts the service again when the pipeline exits (Ctrl-C included).
 # The field web app runs alongside on port 8080 with the SAME preset config: the goldenfleece-web service (which
 # replays with the repo config) is stopped for the run and started again afterwards, so the page draws the tracks
@@ -115,7 +115,7 @@ if systemctl is-active --quiet "$WEB_SERVICE"; then
     restart_web_service=1
 fi
 
-# Two pipelines on one radar corrupt each other's serial exchanges, and the second cannot claim the IMU pins.
+# Two pipelines on one radar corrupt each other's serial exchanges, and the second cannot claim the IMU or motor pins.
 if others="$(pgrep -af '^[^ ]*python[^ ]* [^ ]*tools/run_pipeline\.py')"; then
     echo "  another pipeline is still running; stop it first:" >&2
     echo "$others" | sed 's/^/    /' >&2

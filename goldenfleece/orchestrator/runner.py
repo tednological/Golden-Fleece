@@ -1,8 +1,8 @@
 """Composition root: the single-threaded hot loop.
 
-Per radar frame: decode -> IMU state at t_mid -> ego -> clutter -> tracking -> threat -> policy -> link.
+Per radar frame: decode -> IMU state at t_mid -> ego -> clutter -> tracking -> threat -> policy -> haptics.
 Heartbeats and WATCHDOG=1 are emitted FROM THIS LOOP on progress.  On start, PIPELINE_RESTARTING
-is announced to the MCU before anything else.  Recording, latency and telemetry are side outputs.
+is handed to the haptics before anything else.  Recording, latency and telemetry are side outputs.
 No threads here; adapters own theirs.
 """
 from __future__ import annotations
@@ -16,8 +16,8 @@ from ..config import Config
 from ..health import HealthTracker
 from ..l01_radar_data_input.source import RadarFrameSource
 from ..l02_imu_data_input.source import ImuSource
-from ..l10_mcu_link.link import McuLink
-from ..types import HealthBits, HealthEvent, RadarConfigChanged, ThreatLevel, WarningCommand
+from ..l10_haptics.output import HapticOutput
+from ..types import HealthBits, HealthEvent, RadarConfigChanged, WarningCommand
 from . import recording as R
 from .latency import LatencyStats
 from .pipeline import Pipeline
@@ -43,18 +43,18 @@ class Telemetry:
     ego_valid: bool = False
     ego_speed: float = 0.0
     latency: Dict[str, Dict[str, float]] = field(default_factory=dict)
-    link: Dict[str, Any] = field(default_factory=dict)
+    haptics: Dict[str, Any] = field(default_factory=dict)
 
 
 class Runner:
-    def __init__(self, cfg: Config, clock: Clock, radar: RadarFrameSource, imu: ImuSource, link: McuLink,
+    def __init__(self, cfg: Config, clock: Clock, radar: RadarFrameSource, imu: ImuSource, haptics: HapticOutput,
                  recorder: Optional[R.RecordingWriter] = None, power: Optional[Any] = None, notifier: Optional[SdNotifier] = None,
                  perf_clock: Optional[Clock] = None, firmware_version: str = "", git_rev: str = "") -> None:
         self.cfg = cfg
         self.clock = clock
         self.radar = radar
         self.imu = imu
-        self.link = link
+        self.haptics = haptics
         self.recorder = recorder
         self.power = power
         self.notifier = notifier or SdNotifier(addr="")
@@ -69,17 +69,11 @@ class Runner:
         self.tick_timeout = float(o.tick_timeout_s)
         self.wd_min_period = float(o.watchdog_notify_min_period_s)
         self.lat_period = float(o.latency_report_period_s)
-        lk = cfg.pipeline.link
-        self.hb_min_period = float(lk.heartbeat_min_period_s)
-        self.warn_refresh = float(lk.warning_refresh_s)
-        self.health_refresh = float(lk.health_refresh_s)
-        self.rcfg_refresh = float(lk.radar_config_refresh_s)
-        self._last_hb_t = -1e9
-        self._last_warn_t = -1e9
-        self._last_warn: Optional[WarningCommand] = None
-        self._last_health_t = -1e9
-        self._last_rcfg_t = -1e9
-        self._last_rcfg: Optional[RadarConfigChanged] = None
+        self.cmd_refresh = float(cfg.pipeline.recording.cmd_refresh_s)
+        self.hap_refresh = float(cfg.pipeline.recording.haptics_refresh_s)
+        self._last_hap_rec_t = -1e9
+        self._last_cmd_rec_t = -1e9
+        self._last_cmd_rec: Optional[WarningCommand] = None
         self._last_wd_t = -1e9
         self._last_lat_t = -1e9
         self._last_progress_iter = -1
@@ -96,40 +90,36 @@ class Runner:
             self._record(R.rec_health(e))
             log.info("HEALTH %s %s (%s) %s", e.bit.name, "ON" if e.active else "off", e.source, e.detail)
         if evs:
-            self._send_health(t_now, force=True)
+            self.haptics.send_health(self.health.state)
 
-    def _send_health(self, t_now: float, force: bool = False) -> None:
-        if force or (t_now - self._last_health_t) >= self.health_refresh:
-            onset = 0
-            for bit, t0 in self.health.snapshot(t_now).onset.items():
-                onset = max(onset, int((t_now - t0) * 1000))
-            self.link.send_health(self.health.state, self.health.bits, onset)
-            self._last_health_t = t_now
-
-    def _send_heartbeat(self, t_now: float, force: bool = False) -> None:
-        if force or (t_now - self._last_hb_t) >= self.hb_min_period:
-            self.link.send_heartbeat(self.pipe.loop_iter, self.pipe.frames_processed, self.pipe.last_frame_number,
-                                     self.health.state, self.health.bits)
-            self._last_hb_t = t_now
+    def _send_heartbeat(self) -> None:
+        """Every iteration: the haptics' watchdog falls back to "warnings offline" when this counter stops."""
+        self.haptics.send_heartbeat(self.pipe.loop_iter)
 
     def _send_warning(self, cmd: WarningCommand, t_now: float) -> None:
-        changed = (self._last_warn is None or cmd.level != self._last_warn.level or cmd.side != self._last_warn.side
-                   or cmd.health_state != self._last_warn.health_state or cmd.health_bits != self._last_warn.health_bits
-                   or cmd.assert_alert != self._last_warn.assert_alert or cmd.t_arrival_bucket != self._last_warn.t_arrival_bucket)
-        if changed or (t_now - self._last_warn_t) >= self.warn_refresh:
-            self.link.send_warning(cmd)
-            self._last_warn = cmd
-            self._last_warn_t = t_now
+        self.haptics.send_warning(cmd)
+        last = self._last_cmd_rec
+        changed = (last is None or cmd.level != last.level or cmd.side != last.side
+                   or cmd.health_state != last.health_state or cmd.health_bits != last.health_bits
+                   or cmd.assert_alert != last.assert_alert or cmd.t_arrival_bucket != last.t_arrival_bucket)
+        if changed or (t_now - self._last_cmd_rec_t) >= self.cmd_refresh:
+            self._last_cmd_rec = cmd
+            self._last_cmd_rec_t = t_now
             self._record(R.rec_cmd(cmd))
 
-    def _send_rcfg(self, t_now: float, force: bool = False) -> None:
-        if self._last_rcfg is None:
-            return
-        if force or (t_now - self._last_rcfg_t) >= self.rcfg_refresh:
-            th = self.cfg.pipeline.threat
-            self.link.send_radar_config(self._last_rcfg, int(self.cfg.pipeline.clutter.doppler_blind_band_mps * 100),
-                                        int(float(th.t_alert_s) * 1000), int(float(th.t_warning_s) * 1000))
-            self._last_rcfg_t = t_now
+    def _record_haptics(self, t_now: float) -> None:
+        """Every change in what the motors render, and the current state again when there was none for a while
+        (so a viewer joining a long session's tail still learns it)."""
+        for c in self.haptics.drain_changes():
+            self._record(R.rec_haptic(c))
+            self._last_hap_rec_t = t_now
+            log.info("HAPTICS %s%s%s", c.text, f" [{c.cause}]" if c.cause else "",
+                     f" ({c.latency_s * 1e3:.1f} ms after the decision)" if c.latency_s is not None else "")
+        if t_now - self._last_hap_rec_t >= self.hap_refresh:
+            c = self.haptics.current()
+            if c is not None:
+                self._record(R.rec_haptic(c, refresh=True))
+                self._last_hap_rec_t = t_now
 
     def _watchdog(self, t_now: float) -> None:
         """WATCHDOG=1 only when the loop made progress since the last notification."""
@@ -148,9 +138,7 @@ class Runner:
                 self._emit_health_events([ev], t_now)
         for e in self.radar.drain_events():
             if isinstance(e, RadarConfigChanged):
-                self._last_rcfg = e
                 self._record(R.rec_rcfg(e))
-                self._send_rcfg(t_now, force=True)
             else:
                 ev = self.health.set(e.bit, e.active, t_now, e.source, e.detail)
                 if ev:
@@ -164,6 +152,10 @@ class Runner:
                 evs = [e for e in (e1, e2) if e]
                 if evs:
                     self._emit_health_events(evs, t_now)
+        for e in self.haptics.drain_events():
+            ev = self.health.set(e.bit, e.active, t_now, e.source, e.detail)
+            if ev:
+                self._emit_health_events([ev], t_now)
 
     def _update_telemetry(self, t_now: float, res=None, cmd: Optional[WarningCommand] = None) -> None:
         tm = self.telemetry
@@ -182,18 +174,17 @@ class Runner:
             tm.n_detections = len(res.radar.detections)
             tm.ego_valid = res.ego.valid
             tm.ego_speed = res.ego.speed
-        tm.link = {"up": self.link.up, "mode": self.link.stats.mcu_mode, "lines": self.link.stats.lines_written,
-                   "coalesced": self.link.stats.coalesced, "reconnects": self.link.stats.reconnects}
+        hs = self.haptics.stats
+        tm.haptics = {"up": self.haptics.up, "mode": hs.mode, "render": hs.render, "writes": hs.writes,
+                      "write_errors": hs.write_errors, "fallbacks": hs.fallbacks}
 
     # -- main loop ----------------------------------------------------------------------------------------------
     def announce_restart(self) -> None:
         t_now = self.clock.now()
         ev = self.health.set(HealthBits.PIPELINE_RESTARTING, True, t_now, "orchestrator", "process start")
-        # announce BEFORE anything else reaches the MCU
-        self.link.send_health(self.health.state, self.health.bits, 0)
-        self.link.send_heartbeat(self.pipe.loop_iter, self.pipe.frames_processed, -1, self.health.state, self.health.bits)
-        self._last_hb_t = t_now
-        self._last_health_t = t_now
+        # announce BEFORE any decision reaches the haptics
+        self.haptics.send_health(self.health.state)
+        self._send_heartbeat()
         if ev:
             self._record(R.rec_health(ev))
         self._record(R.rec_header(t_now, self._config_summary(), self.firmware_version, self.git_rev))
@@ -217,8 +208,7 @@ class Runner:
             self._record(R.rec_radar(frame) | {"tn": t_now})
             self._emit_health_events(res.health_events, t_now)
             self._send_warning(res.command, t_now)
-            self._send_heartbeat(t_now)
-            self._send_rcfg(t_now)
+            self._send_heartbeat()
             t_handed = self.perf.now()
             self.latency.loop.add(t_handed - t_p0)
             for k, v in res.stage_s.items():
@@ -233,8 +223,7 @@ class Runner:
             cmd, evs = self.pipe.tick(t_now)
             self._emit_health_events(evs, t_now)
             self._send_warning(cmd, t_now)
-            self._send_heartbeat(t_now)
-            self._send_health(t_now)
+            self._send_heartbeat()
             self._update_telemetry(t_now, cmd=cmd)
             processed = False
         self._watchdog(t_now)
@@ -243,8 +232,7 @@ class Runner:
             self.telemetry.latency = self.latency.report()
             self._record({"k": "lat", "t": t_now, **{k: v for k, v in self.latency.report().items()}})
             log.info("LATENCY %s", self.latency.log_line())
-        if hasattr(self.link, "poll_rx"):
-            self.link.poll_rx()
+        self._record_haptics(t_now)
         return processed
 
     def run(self, should_stop: Callable[[], bool]) -> None:

@@ -106,11 +106,12 @@ def run_scenario(sc: Scenario, cfg, verbose: bool = False, on_frame=None, record
 
 
 def bench_runner(sc: Scenario, cfg) -> dict:
-    """Run the REAL Runner (link + MCU emulator on a loopback transport) on the simulator, timing each
-    loop iteration with a real clock.  This is the measured Pi-side cost of process_frame + link hand-off."""
+    """Run the REAL Runner (haptics rendering into motors without hardware) on the simulator, timing each
+    loop iteration with a real clock.  This is the measured Pi-side cost of process_frame + haptics hand-off."""
     from goldenfleece.l02_imu_data_input.source import QueueImuSource
-    from goldenfleece.l10_mcu_link.emulator import McuEmulator
-    from goldenfleece.l10_mcu_link.link import LoopbackTransport, McuLink
+    from goldenfleece.l10_haptics.motors import NullMotor
+    from goldenfleece.l10_haptics.output import HapticOutput
+    from goldenfleece.l10_haptics.patterns import haptics_config
     from goldenfleece.orchestrator.runner import Runner
     from tools.sim.sources import SimRadarSource
     rider = RiderKinematics(sc.world.road, sc.rider)
@@ -119,10 +120,9 @@ def bench_runner(sc: Scenario, cfg) -> dict:
     clock = FakeClock(0.0)
     imu_src = QueueImuSource()
     src = SimRadarSource(radar, imu, imu_src, clock, sc.duration_s)
-    mcu = McuEmulator(clock)
-    link = McuLink(cfg.pipeline.link, clock, lambda: LoopbackTransport(mcu.feed), synchronous=True)
-    link.start()
-    runner = Runner(cfg, clock, src, imu_src, link, perf_clock=MonotonicClock())
+    haptics = HapticOutput(haptics_config(cfg.pipeline.haptics), clock, lambda m: NullMotor(m.name), synchronous=True)
+    haptics.start()
+    runner = Runner(cfg, clock, src, imu_src, haptics, perf_clock=MonotonicClock())
     runner.announce_restart()
     import gc
     gc.collect()
@@ -130,7 +130,7 @@ def bench_runner(sc: Scenario, cfg) -> dict:
         runner.step()
     rep = runner.latency.report()
     return {"loop_ms": {k: v * 1e3 for k, v in rep["loop"].items()}, "stages_ms": {k: {kk: vv * 1e3 for kk, vv in v.items()} for k, v in rep.items() if k.startswith("l0")},
-            "frames": runner.pipe.frames_processed, "link_lines": link.stats.lines_written, "coalesced": link.stats.coalesced}
+            "frames": runner.pipe.frames_processed, "motor_writes": haptics.stats.writes, "render_changes": haptics.stats.changes}
 
 
 def main(argv=None) -> int:
@@ -140,7 +140,7 @@ def main(argv=None) -> int:
     ap.add_argument("--json", type=str, default=None)
     ap.add_argument("--config", type=str, default=str(ROOT / "config"))
     ap.add_argument("--record-dir", type=str, default=None, help="write one recording per scenario (JSONL)")
-    ap.add_argument("--bench", action="store_true", help="time the real Runner loop (process_frame + link hand-off) with a real clock")
+    ap.add_argument("--bench", action="store_true", help="time the real Runner loop (process_frame + haptics hand-off) with a real clock")
     a = ap.parse_args(argv)
     if a.bench:
         cfg = load_config(a.config)
@@ -148,7 +148,7 @@ def main(argv=None) -> int:
             b = bench_runner(sc, cfg)
             lm = b["loop_ms"]
             print(f"{sc.name:32s} frames={b['frames']:5d} loop p50={lm['p50']:.2f} p99={lm['p99']:.2f} max={lm['max']:.2f} ms  "
-                  f"link lines={b['link_lines']} coalesced={b['coalesced']}")
+                  f"motor writes={b['motor_writes']} render changes={b['render_changes']}")
         return 0
     cfg = load_config(a.config)
     scs = [BY_NAME[n]() for n in a.names] if a.names else all_scenarios()

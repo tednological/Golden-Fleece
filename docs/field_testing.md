@@ -7,14 +7,15 @@ This is a test rig, not a safety device yet: see "Known limits" at the end.
 
 | Service | What it does | Unit |
 |---|---|---|
-| `goldenfleece` | The pipeline: K-LD7 + BNO085 → l03..l09 → MCU link. Records every session to `~/golden_fleece_recordings`. | `deploy/goldenfleece.service` |
+| `goldenfleece` | The pipeline: K-LD7 + BNO085 → l03..l09 → haptics (the vibration motors on the Pi's GPIOs). Records every session to `~/golden_fleece_recordings`. | `deploy/goldenfleece.service` |
 | `goldenfleece-web` | The field web app on port 8080. Follows the newest recording, replays l03..l09 for display, and shows the pipeline's own decisions. | `deploy/goldenfleece-web.service` |
 | `goldenfleece-camera` | Records the USB camera into `~/golden_fleece/Camera Footage` unless stopped from the web app (see "Camera" below). | `deploy/goldenfleece-camera.service` |
 
 All three start at boot. They are separate processes, so neither the web app nor the camera can slow down or stop
 the pipeline.
-No MCU board is attached yet, so nothing vibrates or lights up: the phone page is the only display.
-`MCU_LINK_DOWN` is informational and does not change health or warnings.
+There is no MCU: the pipeline drives the vibration motors itself, at 100 % duty (`docs/haptics.md`). If their pins
+cannot be driven, `HAPTICS_FAULT` makes health OFFLINE and the page says "WARNINGS OFFLINE": the rider would feel
+nothing.
 
 ## Reaching the page
 
@@ -37,8 +38,9 @@ sudo systemctl start goldenfleece
 sudo systemctl disable goldenfleece goldenfleece-web goldenfleece-camera   # stop starting at boot
 ```
 
-Running `tools/run_pipeline.py`, `tools/kld7_probe.py` or `tools/bno085_probe.py` by hand while the service is
-up makes two processes fight over the radar and the IMU. Stop the service first.
+Running `tools/run_pipeline.py`, `tools/kld7_probe.py`, `tools/bno085_probe.py` or `tools/haptics_test.py` by hand
+while the service is up makes two processes fight over the radar, the IMU and the motor pins. Stop the service first.
+If a pipeline run by hand was killed with a motor buzzing, `.venv/bin/python tools/haptics_test.py --off` stops it.
 
 ## Camera
 
@@ -84,6 +86,9 @@ Stop-and-ask rules apply: if a sign is wrong, report it. Never flip a sign in co
    (nominal), which is only right if the board's X/Y/Z match the radar's (+X rearward, +Y rider's right,
    +Z up). The six-orientation test fills it properly.
 7. **Vest fabric (R16).** Cover the sensor with the fabric: flapping must not create targets.
+8. **Haptics (H1, H2, H4).** With the service stopped, `.venv/bin/python tools/haptics_test.py --patterns` on the
+   vest: every motor passes claim, level and felt, on the right side, and the five patterns are told apart. Start
+   the service again: the first thing felt is "warnings offline" (three short ticks every 5 s) until the radar runs.
 
 ## On the ride
 
@@ -91,6 +96,11 @@ Stop-and-ask rules apply: if a sign is wrong, report it. Never flip a sign in co
 - Watch the header: "stale" means no new data (pipeline stopped or the radar went quiet); DEGRADED lists its
   cause in the banner; the power line in "Health & pipeline" flags under-voltage.
 - The IMU card should show the gyro at about 200 Hz. A falling rate or IMU_FAULT means the IMU needs a look.
+- The haptics card shows what the motors render (e.g. "warning left", "warnings offline"), the render thread's
+  watchdog (NORMAL, or FALLBACK when the pipeline loop stalled), the decision → motor latency and the recent
+  changes. The header chip reads "haptics ok"; "haptics: warnings offline" while health is OFFLINE, "haptics: loop
+  stalled" in FALLBACK, and "haptics fault" when the pins cannot be driven. Every change is in the session file as
+  a `hap` record: `grep '"k":"hap"' ~/golden_fleece_recordings/<session>.jsonl`.
 
 ## After the ride
 
@@ -113,7 +123,8 @@ card fills after about 8 hours of footage, and recording then pauses.
 - Every threshold is still tagged `unvalidated` in the register (`config/pipeline.yaml`).
 - Azimuth sign, Doppler sign and range scale are unconfirmed until the bench checks above pass.
 - The alias check is off (above).
-- No MCU: no haptics or lights, and a Pi brownout silences everything (documented limitation M5).
+- No device independent of the Pi: if the whole pipeline process hangs, the motors keep their state (silent, or
+  one left on) until systemd restarts it, about 2 s (H5); a Pi brownout silences everything (H6).
 - The web view lags the pipeline by the recording flush period (0.2 s) plus up to one page refresh (0.125 s).
 - IMU timing under the running service (2026-09-15): gyro 199 Hz, jitter p99 3.2 ms against a 5 ms limit, with
   occasional single gaps up to about 30 ms. The pipeline uses about 21 % of one core (mostly the IMU poll),

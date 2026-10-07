@@ -13,6 +13,9 @@ Record kinds:
   cmd   decision         {t, seq, lvl, side, bkt, hs, bits, alert}
   rcfg  radar config     {t, rrai, rspi, baud, fw, ...}
   pwr   power flags      {t, flags}
+  hap   haptics         {t, r, lvl, side, alert, hs, mode, txt, cause?, lat?, rf?}  every change in what the motors
+        render (r: Render; cause: FALLBACK entry/exit reason; lat: decision -> motor write, s), and the current state
+        again every recording.haptics_refresh_s without a change (rf: 1)
   lat   latency summary  {t, stage_p50, stage_p99, e2e_p50, e2e_p99, e2e_max}
   end   {t, drops, records}
 """
@@ -26,7 +29,8 @@ from pathlib import Path
 from typing import Any, Dict, Iterator, Optional
 
 from ..clock import Clock, wall_clock_iso
-from ..types import HealthEvent, ImuKind, RadarConfigChanged, RawImuSample, RawRadarFrame, RawRadarTarget, WarningCommand
+from ..l10_haptics.output import HapticChange
+from ..types import HealthBits, HealthEvent, ImuKind, RadarConfigChanged, RawImuSample, RawRadarFrame, RawRadarTarget, WarningCommand
 
 FORMAT_VERSION = 1
 
@@ -59,6 +63,19 @@ def rec_rcfg(r: RadarConfigChanged) -> Dict[str, Any]:
             "masp": r.masp, "fw": r.firmware_version, "T": r.frame_duration_s}
 
 
+def rec_haptic(c: HapticChange, refresh: bool = False) -> Dict[str, Any]:
+    s = c.state
+    r = {"k": "hap", "t": c.t, "r": s.render.value, "lvl": int(s.level), "side": s.side.value, "alert": s.alert,
+         "hs": s.health.name, "mode": s.mode.value, "txt": c.text}
+    if c.cause:
+        r["cause"] = c.cause
+    if c.latency_s is not None:
+        r["lat"] = round(c.latency_s, 6)
+    if refresh:
+        r["rf"] = 1
+    return r
+
+
 def rec_power(t: float, flags: int) -> Dict[str, Any]:
     return {"k": "pwr", "t": t, "flags": flags}
 
@@ -67,6 +84,15 @@ def rec_power(t: float, flags: int) -> Dict[str, Any]:
 def radar_from_rec(r: Dict[str, Any]) -> RawRadarFrame:
     return RawRadarFrame(t_header=float(r["t"]), frame_number=int(r["fn"]), gap=int(r["gap"]), rspi=int(r["rspi"]), rrai=int(r["rrai"]),
                          targets=tuple(RawRadarTarget(*[int(x) for x in tg]) for tg in r["tg"]), cap_hit=bool(r["cap"]), source_seq=int(r["seq"]))
+
+
+# Bits that recordings name but this build does not.  MCU_LINK_DOWN (0x200, before the MCU was removed) was
+# informational: it never changed the health state, so reading it as NONE keeps old sessions' reports unchanged.
+RETIRED_BITS = frozenset({"MCU_LINK_DOWN"})
+
+
+def health_bit_from_rec(name: str) -> HealthBits:
+    return HealthBits.NONE if name in RETIRED_BITS else HealthBits[name]
 
 
 def imu_from_rec(r: Dict[str, Any]) -> RawImuSample:

@@ -25,8 +25,7 @@ PDAT_MAX_TARGETS = 12
 
 
 class RadarTopology(enum.Enum):
-    PI_POLLS = "PI_POLLS"
-    MCU_POLLS_AND_FORWARDS = "MCU_POLLS_AND_FORWARDS"
+    PI_POLLS = "PI_POLLS"            # the only one: there is no MCU to poll the sensor and forward its frames
 
 
 class SourceTag(enum.Enum):
@@ -308,14 +307,15 @@ class HealthBits(enum.IntFlag):
     UNDERVOLTAGE = 1 << 6
     THROTTLED = 1 << 7
     PIPELINE_RESTARTING = 1 << 8
-    MCU_LINK_DOWN = 1 << 9
+    HAPTICS_FAULT = 1 << 9          # the vibration motors cannot be driven: the rider gets no warnings
     RADAR_CONFIG_MISMATCH = 1 << 10
 
 
-OFFLINE_BITS = HealthBits.RADAR_SILENT | HealthBits.PIPELINE_RESTARTING | HealthBits.RADAR_CONFIG_MISMATCH
+OFFLINE_BITS = (HealthBits.RADAR_SILENT | HealthBits.PIPELINE_RESTARTING | HealthBits.RADAR_CONFIG_MISMATCH
+                | HealthBits.HAPTICS_FAULT)
 DEGRADED_BITS = (HealthBits.RADAR_GAPS | HealthBits.RADAR_POSSIBLY_BLOCKED | HealthBits.PDAT_SATURATED
                  | HealthBits.IMU_FAULT | HealthBits.UNDERVOLTAGE | HealthBits.THROTTLED)
-INFORMATIONAL_BITS = HealthBits.EGO_INVALID | HealthBits.MCU_LINK_DOWN
+INFORMATIONAL_BITS = HealthBits.EGO_INVALID
 
 
 @dataclass(frozen=True)

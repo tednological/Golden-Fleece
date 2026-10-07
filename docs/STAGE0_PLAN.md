@@ -1,5 +1,9 @@
 # Golden Fleece — Stage 0 plan (report, then stop)
 
+> **Historical.** Since 2026-10-07 there is no MCU (team decision 12, `docs/DECISIONS.md`): the vibration motors are on
+> the Pi's GPIOs and l10 drives them directly (`docs/haptics.md`). The MCU, its link and its ICD below describe the
+> design as planned then.
+
 Parameters in effect: `RADAR_TOPOLOGY = PI_POLLS`, `MCU_TRANSPORT = USB_CDC`.
 Inputs used: the task prompt and `docs/K-LD7_Datasheet.pdf` (RFbeam, Revision B, 03/2021, 23 pages). Nothing fetched.
 

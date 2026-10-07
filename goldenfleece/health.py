@@ -1,7 +1,7 @@
 """Health aggregation: reason bits -> state, with onset bookkeeping.
 
 Health is a channel separate from threat.  Every transition produces a
-HealthEvent that is recorded and forwarded to the MCU.  Pure: receives
+HealthEvent that is recorded and handed to the haptics.  Pure: receives
 timestamps as arguments.
 """
 from __future__ import annotations

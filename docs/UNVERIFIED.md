@@ -44,18 +44,17 @@ Initial register (Stage 0). Each item names the confirming step. Items move out 
 | I9 | The library's `_readings` identity change is a reliable new-sample detector (no per-sample timestamps in the library) | code reading of adafruit_bno08x 1.x | **Obsolete 2026-09-14:** l02 emits every report in each packet through the library's parser; nothing depends on `_readings` |
 | I10 | The BNO085 accepts SPI host writes with PS0/WAKE tied high | **Contradicted 2026-09-14 (bench):** a write while H_INTN is deasserted is ignored; one riding on a transfer the sensor started is answered. adafruit_bno08x's SPI class also discards the packet it clocks in while writing, so it never gets past "Could not read ID". l02 uses its own full-duplex transport and rides every write on a sensor transfer; `tests/test_l02_bno085_spi.py` pins both behaviours in a fake |
 
-## MCU link and GPIO
+## Haptics (no MCU since 2026-10-07, `docs/haptics.md`)
 
 | # | Assumption | Confirmed by |
 |---|---|---|
-| M1 | GPIO17 boot-default pull-down on this Pi 5 (measured via `pinctrl`: yes) also holds during reboot/firmware stages | Scope or meter during a reboot |
-| M2 | MCU-side pull-down defines idle; an unpowered Pi reads idle | Bench |
-| M3 | CPX USB CDC enumerates with a stable by-id path and survives Pi USB re-enumeration | Stage 5 |
-| M4 | STATUS round trip < 10 ms (latency measurement resolution) | Stage 5 |
-| M5 | **Not met (team answer 6):** the MCU is powered through the Pi, so a Pi brownout silences both and cannot be announced. Documented limitation (ICD §9.2). | Team hardware decision |
-| M7 | The alert travels on the UART (team answer 5): its failure domain is the serial link's; a stuck assertion is bounded by the 300 ms stale rule | ICD §5 | Stage 5 bench with `kill -STOP` |
-| M8 | ATmega328P-XMINI mEDBG CDC bridge sustains 57600 8N1 with ≤ 96-byte lines at up to ~40 lines/s | assumption | Stage 5 bench (`STAT` round trips, CRC error count) |
-| M6 | Under `PI_POLLS`, a passive tap of radar TX carries nothing during a Pi hang | By construction; documented in ICD |
+| H1 | The motors are on `D12` (left) and `D13` (right), and each is felt on the side the config gives it | `tools/haptics_test.py` on the vest |
+| H2 | At 100 % duty lgpio holds the pin high (no toggling), and the motor driver does not pull it down | `tools/haptics_test.py`: `pinctrl` reads high in every sample while on |
+| H3 | Each driver input has a pull-down, so an undriven pin (boot, before the pipeline, after a crash) means off | Bench: meter on the driver input with the pipeline stopped, and during a reboot |
+| H4 | The patterns are told apart on the body while riding (road vibration, clothing), and neither fault pattern is mistaken for a warning | `tools/haptics_test.py --patterns`, then rides |
+| H5 | **Limitation:** a hung pipeline process (not just a stalled loop) stops the render thread too: the motors keep their state, possibly on, until systemd's watchdog (2 s) stops it and `ExecStopPost` switches them off. There is no independent device to announce "warnings offline" | `kill -STOP` of the service with a motor on; time to off |
+| H6 | **Limitation:** the motors run from the Pi's 5 V rail, so a brownout silences them and cannot be announced (as with the MCU before, team answer 6) | Team hardware decision |
+| H7 | A GPIO released by a dead process stays low (or floats to the pull-down) rather than keeping its last level | `kill -9` of the pipeline with a motor on, before `ExecStopPost` runs |
 
 ## Power and platform
 

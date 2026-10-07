@@ -15,7 +15,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from goldenfleece.health import state_from_bits                # noqa: E402
-from goldenfleece.orchestrator.recording import read_recording  # noqa: E402
+from goldenfleece.orchestrator.recording import health_bit_from_rec, read_recording  # noqa: E402
 from goldenfleece.types import HealthBits, HealthState          # noqa: E402
 
 
@@ -72,7 +72,9 @@ def analyse(path: Path | str) -> SessionReport:
         elif k == "end":
             drops = int(r.get("drops", 0))
         elif k == "hev":
-            bit = HealthBits[r["bit"]]
+            bit = health_bit_from_rec(r["bit"])
+            if not bit:
+                continue
             if r["on"]:
                 bits |= bit
             else:

@@ -13,7 +13,7 @@ DOCS = Path(__file__).resolve().parent.parent / "docs"
 CONFIG = Path(__file__).resolve().parent.parent / "config"
 
 THREAD_ALLOWED = {
-    "l10_mcu_link/link.py",            # the transport half of l10
+    "l10_haptics/output.py",           # the render thread that drives the motors
     "orchestrator/recording.py",       # the recording writer
     "orchestrator/power_monitor.py",   # power-flag adapter thread
 }
@@ -55,6 +55,15 @@ def test_inv4_single_radar_conversion_site():
         assert "/ 3.6" not in src and "/3.6" not in src, rel
         assert "angle_raw / 100" not in src and "angle_raw/100" not in src, rel
         assert "distance_cm / 100" not in src, rel
+
+
+def test_hardware_half_of_l10_has_no_math_or_timing():
+    """The motor adapter only switches a PWM output on or off; patterns and their timing live in the pure half."""
+    src = (PKG / "l10_haptics" / "motors.py").read_text()
+    assert not re.search(r"^\s*(import|from)\s+(math|numpy|threading)\b", src, re.M)
+    assert "sleep(" not in src and "clock" not in src.lower()
+    pure = (PKG / "l10_haptics" / "patterns.py").read_text()
+    assert not re.search(r"^\s*(import|from)\s+(threading|board|pwmio|lgpio)\b", pure, re.M)
 
 
 def test_inv5_time_only_in_clock():
@@ -121,14 +130,14 @@ def test_inv3_no_world_frames_in_package():
 
 def test_inv6_heartbeat_built_only_by_the_pipeline_loop():
     """No independent heartbeat timer: send_heartbeat is called from the orchestrator loop only, and the
-    link module owns no Timer."""
+    haptics own no Timer."""
     callers = []
     for p in _py_files(PKG):
         rel = _rel(p)
         src = p.read_text()
         if "send_heartbeat(" in src and "def send_heartbeat" not in src:
             callers.append(rel)
-        if rel.startswith("l10_mcu_link/"):
+        if rel.startswith("l10_haptics/"):
             assert "Timer(" not in src and "sched" not in src, rel
     assert set(callers) == {"orchestrator/runner.py"}, callers
     runner = (PKG / "orchestrator" / "runner.py").read_text()

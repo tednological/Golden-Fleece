@@ -1,7 +1,7 @@
 """Golden Fleece pipeline entry point (composition root).
 
-    .venv/bin/python tools/run_pipeline.py --config config [--no-imu] [--no-link] [--deploy]
-    .venv/bin/python tools/run_pipeline.py --radar sim:overtake_left_10mps --imu sim     # real runner + real MCU link on the simulator
+    .venv/bin/python tools/run_pipeline.py --config config [--no-imu] [--no-haptics] [--deploy]
+    .venv/bin/python tools/run_pipeline.py --radar sim:overtake_left_10mps --imu sim     # real runner + real haptics on the simulator
 """
 from __future__ import annotations
 
@@ -24,18 +24,20 @@ from goldenfleece.l01_radar_data_input.driver import DirectKld7Source       # no
 from goldenfleece.l01_radar_data_input.source import QueueRadarSource       # noqa: E402
 from goldenfleece.l02_imu_data_input.bno085_spi import Bno085SpiSource      # noqa: E402
 from goldenfleece.l02_imu_data_input.source import QueueImuSource           # noqa: E402
-from goldenfleece.l10_mcu_link.link import LoopbackTransport, McuLink, SerialTransport   # noqa: E402
+from goldenfleece.l10_haptics.motors import BlinkaPwmMotor, NullMotor    # noqa: E402
+from goldenfleece.l10_haptics.output import HapticOutput                  # noqa: E402
+from goldenfleece.l10_haptics.patterns import haptics_config              # noqa: E402
 from goldenfleece.orchestrator.power_monitor import PowerMonitor            # noqa: E402
 from goldenfleece.orchestrator.recording import RecordingWriter             # noqa: E402
 from goldenfleece.orchestrator.runner import Runner                         # noqa: E402
 from goldenfleece.orchestrator.sdnotify import SdNotifier                   # noqa: E402
-from goldenfleece.types import HealthBits, HealthEvent, RadarTopology       # noqa: E402
+from goldenfleece.types import HealthBits, HealthEvent                      # noqa: E402
 
 log = logging.getLogger("goldenfleece.main")
 
 
 class RealTimeSimSources:
-    """Paces the simulator against the real clock so the real driver loop, link and MCU see realistic timing."""
+    """Paces the simulator against the real clock so the real driver loop and haptics see realistic timing."""
 
     def __init__(self, scenario_name: str, clock: MonotonicClock, use_imu: bool) -> None:
         from tools.sim.imu_model import ImuModel
@@ -100,8 +102,7 @@ def main(argv=None) -> int:
     ap.add_argument("--radar", default="kld7", help="kld7 | sim:<scenario>")
     ap.add_argument("--imu", default="bno085", help="bno085 | sim | none")
     ap.add_argument("--no-imu", action="store_true")
-    ap.add_argument("--no-link", action="store_true", help="loopback link into an in-process MCU emulator (log only)")
-    ap.add_argument("--link-port", default=None, help="override pipeline.yaml link.port (e.g. the pty made by tools/vest_display.py)")
+    ap.add_argument("--no-haptics", action="store_true", help="drive no GPIO: only log (HAPTICS lines) and record what the motors would do")
     ap.add_argument("--no-record", action="store_true")
     ap.add_argument("--deploy", action="store_true")
     ap.add_argument("--log-level", default="INFO")
@@ -110,9 +111,6 @@ def main(argv=None) -> int:
     cfg = load_config(a.config)
     log_config_warnings(cfg)
     clock = MonotonicClock()
-    if cfg.radar.topology is not RadarTopology.PI_POLLS:
-        log.error("topology %s is not implemented in this build (PI_POLLS only)", cfg.radar.topology.value)
-        return 2
 
     sim = None
     if a.radar.startswith("sim:"):
@@ -131,27 +129,13 @@ def main(argv=None) -> int:
     if a.no_imu or a.imu == "none":
         imu_src.push_event(HealthEvent(clock.now(), HealthBits.IMU_FAULT, True, "main", "IMU disabled by flag"))
 
-    link_events = []
-    if a.no_link:
-        from goldenfleece.l10_mcu_link.emulator import McuEmulator
-        mcu = McuEmulator(clock)
-        transport_factory = lambda: LoopbackTransport(mcu.feed)  # noqa: E731
+    hcfg = haptics_config(cfg.pipeline.haptics)
+    if a.no_haptics:
+        motor_factory = lambda m: NullMotor(m.name)  # noqa: E731
+        log.warning("--no-haptics: no motor is driven; HAPTICS log lines show what they would do")
     else:
-        lk = cfg.pipeline.link
-        port = a.link_port or str(lk.port)
-        transport_factory = lambda: SerialTransport(port, int(lk.baudrate))  # noqa: E731
-
-    runner_holder = {}
-
-    def on_link_state(up: bool, t: float, why: str) -> None:
-        r = runner_holder.get("r")
-        if r is not None:
-            ev = r.health.set(HealthBits.MCU_LINK_DOWN, not up, t, "l10", why)
-            if ev:
-                r._emit_health_events([ev], t)
-        (log.info if up else log.warning)("MCU link %s: %s", "up" if up else "DOWN", why)
-
-    link = McuLink(cfg.pipeline.link, clock, transport_factory, on_link_state=on_link_state)
+        motor_factory = lambda m: BlinkaPwmMotor(m.pin, hcfg.frequency_hz, hcfg.duty_u16)  # noqa: E731
+    haptics = HapticOutput(hcfg, clock, motor_factory)
     recorder = None
     if not a.no_record and bool(cfg.pipeline.recording.enabled):
         from goldenfleece.clock import wall_clock_iso
@@ -161,9 +145,8 @@ def main(argv=None) -> int:
         log.info("recording to %s", path)
     power = PowerMonitor(clock, float(cfg.pipeline.power.poll_period_s))
     notifier = SdNotifier()
-    runner = Runner(cfg, clock, radar_src, imu_src, link, recorder=recorder, power=power, notifier=notifier, git_rev=git_rev(),
+    runner = Runner(cfg, clock, radar_src, imu_src, haptics, recorder=recorder, power=power, notifier=notifier, git_rev=git_rev(),
                     firmware_version=getattr(radar_src, "firmware_version", ""))
-    runner_holder["r"] = runner
 
     stop = {"flag": False}
 
@@ -173,10 +156,12 @@ def main(argv=None) -> int:
     signal.signal(signal.SIGINT, _sig)
     signal.signal(signal.SIGTERM, _sig)
 
-    link.start()
     power.start()
     radar_src.start()
     imu_src.start()
+    haptics.start()              # its watchdog's grace starts now: the loop's heartbeats follow at once
+    if haptics.up:
+        log.info("haptics: %s at %.0f %% duty", ", ".join(f"{m.name} on {m.pin}" for m in hcfg.motors), hcfg.duty_cycle * 100)
     if a.deploy:
         apply_deploy_settings()
     try:
@@ -193,13 +178,15 @@ def main(argv=None) -> int:
                 if idle_ticks % 20 == 0:
                     gc.collect(0)
     finally:
+        haptics.stop()               # first: every motor off, whatever else fails below
         radar_src.stop()
         imu_src.stop()
         power.stop()
-        link.stop()
         if recorder is not None:
             recorder.close()
-        log.info("link stats: %s", runner.link.stats)
+        st = haptics.stats
+        log.info("haptics stats: writes=%d write_errors=%d open_failures=%d fallbacks=%d changes=%d", st.writes,
+                 st.write_errors, st.open_failures, st.fallbacks, st.changes)
     return 0
 
 

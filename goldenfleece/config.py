@@ -184,8 +184,12 @@ def load_radar(path: Path, allow_unmeasured: bool, warnings: List[str]) -> Radar
         measured = False
     else:
         measured = True
+    try:
+        topology = RadarTopology(d.get("topology", "PI_POLLS"))
+    except ValueError as e:
+        raise ConfigError(f"radar.yaml: topology {d.get('topology')!r} is not supported: the Pi polls the radar (PI_POLLS)") from e
     return RadarConfig(
-        topology=RadarTopology(d.get("topology", "PI_POLLS")),
+        topology=topology,
         port=str(d["port"]),
         baudrate=int(d["baudrate"]),
         baud_probe_order=[int(b) for b in d.get("baud_probe_order", [115200, 460800, 921600, 2000000, 3000000])],
@@ -221,9 +225,11 @@ def load_config(config_dir: Path | str = "config") -> Config:
     radar = load_radar(config_dir / "radar.yaml", allow_unmeasured, warnings)
     frames = load_frames(config_dir / "frames.yaml")
     pipeline = Section(pdata, "pipeline")
-    for sec in ("imu", "ego", "clutter", "tracker", "threat", "policy", "blockage", "link", "orchestrator", "recording", "power", "radar_health"):
+    for sec in ("imu", "ego", "clutter", "tracker", "threat", "policy", "blockage", "haptics", "orchestrator", "recording", "power", "radar_health"):
         if sec not in pdata:
             raise ConfigError(f"pipeline.yaml: section '{sec}' is required")
+    from .l10_haptics.patterns import haptics_config     # here, not at the top: l10 imports this module
+    haptics_config(pipeline.haptics)                       # refuse to start with patterns a fault could be mistaken for
     if not fr.is_signed_permutation(fr.rotation(frames.T_radar_imu)):
         warnings.append("T_radar_imu is not a signed permutation; the IMU is expected to be axis-aligned")
     unval = [n for n, e in register.items() if e["tag"] in ("unvalidated", "nominal")]

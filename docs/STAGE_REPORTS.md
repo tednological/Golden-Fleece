@@ -59,3 +59,9 @@ Lead times are governed by the *unvalidated* 3 s WARNING threshold (`t_arrival_l
 
 ## Stage 6 — pending (hardware, with the team)
 Follow `docs/bringup_checklist.md`. Stop-and-ask on any sign disagreement; never add a compensating negation.
+
+## Stage 6 change — MCU removed (2026-10-07)
+**Decision (team decision 12):** the MCU is gone; the PWM vibration motors are mounted on the Pi's GPIOs and driven at 100 % duty.
+**Replaced:** `l10_mcu_link` (line protocol, writer thread, MCU emulator), `tools/mcu_emulator_serial.py`, `tools/vest_display.py` and `docs/mcu_icd.md` by `goldenfleece/l10_haptics/` (pure patterns and rendering priority, a PWM motor adapter, a render thread with the stall watchdog), `tools/haptics_test.py` and `docs/haptics.md`. `MCU_LINK_DOWN` became `HAPTICS_FAULT` (OFFLINE); `uart` records became `hap` records; `run_pipeline.py --no-link/--link-port` became `--no-haptics`.
+**Passed:** pattern timing; the configured patterns meet the rendering requirements (fault pulses shorter than threat pulses, rising on-time, alert the only maximum) and unsafe ones are refused at load; rendering priority (fault never a threat, DEGRADED keeps the threat); side mapping; loop stall → FALLBACK ≤ 0.27 s on the simulator, stalled counter with heartbeats flowing → FALLBACK; restart rendered "offline" before any threat; a lost motor → HAPTICS_FAULT and recovery; the bench tool against fake motors. Decision → motor write measured p50 0.04 ms, p99 0.5 ms (render thread, no GPIO).
+**Not yet done:** on the hardware: `tools/haptics_test.py` with the real motors (pins, side, 100 % level), patterns on the body while riding (`haptic_patterns`), `kill -STOP` / `kill -9` of the service with a motor on (H5).

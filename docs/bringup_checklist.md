@@ -27,15 +27,15 @@ Stop-and-ask rules (task §15) apply to every measured sign. Never patch a sign 
 4. Static: `+9.81 m/s²` on the radar +Z axis after the extrinsic (I2); note bias/noise (I4, I5) → `imu.eskf` noise densities.
 5. Six-orientation static test (radar +X up/down, +Y up/down, +Z up/down): fill `frames.yaml: imu.q_wxyz`, set `source: measured` (I3).
 
-## C. MCU link (ATmega328P-XMINI, `/dev/ttyACM1`)
-1. Confirm the by-id path in `pipeline.yaml: link.port`; firmware at 57600 8N1 per `docs/mcu_icd.md`.
-2. `.venv/bin/python tools/mcu_emulator_serial.py --port <pty or a second adapter>` to exercise a firmware against the reference emulator behaviour, or run the pipeline with `--radar sim:overtake_left_10mps --imu sim` against the real board and watch `STAT` lines (M3, M4).
-3. Unplug/replug the board while running: `MCU_LINK_DOWN` logged, link recovers (M3).
-4. Kill the pipeline (`kill -STOP`): the board must show "warnings offline" within 0.3 s and log `HB_ABSENT`.
+## C. Haptics (PWM vibration motors on the Pi's GPIOs, `docs/haptics.md`)
+1. Each motor through a driver that takes its current from 5 V, not from the pin, with a pull-down on its input (H3). Set the pins and sides in `pipeline.yaml: haptics.motors`.
+2. `sudo systemctl stop goldenfleece`, then `.venv/bin/python tools/haptics_test.py`: every motor claimed, its pin high in 10/10 samples while on (100 % duty, H2) and low once off, and felt on the side the config gives it (H1). Then `--patterns` on the body (H4).
+3. Run the pipeline with `--radar sim:overtake_left_10mps --imu sim`: "warnings offline" ticks at start, then the warning on the LEFT motor (`HAPTICS` log lines).
+4. `kill -STOP` the running pipeline: note what the motors do until systemd's watchdog restarts it and how long until they are off (H5); `kill -9` with a motor on: off after `ExecStopPost` (H7).
 
 ## D. Power
-1. Load the 5 V rail until `vcgencmd get_throttled` shows 0x1: UNDERVOLTAGE reaches the MCU within ~1 s (P1).
-2. The MCU is powered through the Pi: a brownout silences both (documented limitation, M5).
+1. Load the 5 V rail until `vcgencmd get_throttled` shows 0x1: UNDERVOLTAGE reaches the haptics (degraded marker) within ~1 s (P1).
+2. The motors run from the Pi's 5 V rail: a brownout silences them (documented limitation, H6).
 
 ## E. First ride
 1. `allow_unmeasured: false`; recording on.

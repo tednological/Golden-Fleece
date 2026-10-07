@@ -14,6 +14,9 @@ SupplementaryGroups=dialout gpio spi
 WorkingDirectory=/home/ted/golden_fleece
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/home/ted/golden_fleece/.venv/bin/python /home/ted/golden_fleece/tools/run_pipeline.py --config /home/ted/golden_fleece/config --deploy
+# Every vibration motor off once the pipeline has exited for any reason (stop, crash, watchdog kill): a dead process
+# can leave a pin driven high (docs/haptics.md §4).  "-": a failure here never marks the unit failed.
+ExecStopPost=-/home/ted/golden_fleece/.venv/bin/python /home/ted/golden_fleece/tools/haptics_test.py --config /home/ted/golden_fleece/config --off
 # WATCHDOG=1 is sent from the pipeline loop on progress only (rate-limited to 0.5 s); 2 s tolerates a
 # stalled radar (health ticks still count as progress) but not a stalled loop.
 WatchdogSec=2

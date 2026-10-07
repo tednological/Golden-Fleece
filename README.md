@@ -2,8 +2,8 @@
 
 A wearable cyclist vest warns the rider of vehicles overtaking from behind. A rear-facing RFbeam K-LD7
 24 GHz Doppler radar and a BNO085 IMU on one rigid back plate feed this pipeline; the Pi does soft
-real-time estimation and sends warning commands over a serial link to an MCU that owns the hard
-real-time haptics/lights. No computer vision. No lane semantics: the system can say "something is closing
+real-time estimation and drives PWM vibration motors on its own GPIOs (one per side, 100 % duty while on; no MCU)
+with patterns for the threat level, the side and "warnings offline". No computer vision. No lane semantics: the system can say "something is closing
 fast from behind, roughly left or right", nothing more. A USB camera records footage for reviewing rides into
 `Camera Footage/`; nothing in the pipeline reads it.
 
@@ -19,12 +19,12 @@ goldenfleece/   clock.py types.py config.py frames.py health.py
                 l01_radar_data_input  (K-LD7 driver, from the datasheet)   l02_imu_data_input (BNO085 SPI adapter)
                 l03_radar_decode      l04_imu_decode (ESKF)   l05_ego_motion (RANSAC)   l06_clutter_rejection
                 l07_tracking (r/r_dot + azimuth KFs, Hungarian, coast reasons)   l08_threat   l09_warning_policy
-                l10_mcu_link (line protocol, writer thread, MCU emulator)   orchestrator (pipeline, runner, recording, latency)
+                l10_haptics (patterns, PWM motors, render thread + stall watchdog)   orchestrator (pipeline, runner, recording, latency)
 tools/          sim/ (synthetic world, scenarios, metrics, runner bench)  kld7_probe.py  bno085_probe.py  replay.py
-                outage_report.py  run_pipeline.py  web_app.py (field web app)  vest_display.py (terminal "vest")
-                camera_recorder.py (USB camera -> Camera Footage/)  mcu_emulator_serial.py  fake_kld7.py  fake_bno085.py
+                outage_report.py  run_pipeline.py  web_app.py (field web app)  haptics_test.py (motor bench test)
+                camera_recorder.py (USB camera -> Camera Footage/)  fake_kld7.py  fake_bno085.py
 config/         radar.yaml  frames.yaml  pipeline.yaml (thresholds + the unmeasured-parameters register)  camera.yaml
-docs/           STAGE0_PLAN.md  STAGE_REPORTS.md  mcu_icd.md  latency_budget.md  UNVERIFIED.md  DECISIONS.md
+docs/           STAGE0_PLAN.md  STAGE_REPORTS.md  haptics.md  latency_budget.md  UNVERIFIED.md  DECISIONS.md
                 deployment.md  bringup_checklist.md  field_testing.md
 deploy/         goldenfleece.service (pipeline)  goldenfleece-web.service (field web app)
                 goldenfleece-camera.service (camera recorder)
@@ -46,7 +46,8 @@ python3 -m venv --system-site-packages .venv && .venv/bin/pip install scipy pyte
 .venv/bin/python tools/run_pipeline.py --config config           # the pipeline (see docs/deployment.md)
 .venv/bin/python tools/web_app.py                               # field web app on :8080 (see docs/field_testing.md)
 .venv/bin/python tools/camera_recorder.py --status              # camera recorder: what it is doing (--off / --on)
-.venv/bin/python tools/vest_display.py /tmp/gf_vest             # terminal "vest"; then run_pipeline.py --link-port /tmp/gf_vest
+.venv/bin/python tools/haptics_test.py --patterns               # motors: pins, sides, 100 % duty, patterns (service stopped)
+.venv/bin/python tools/run_pipeline.py --no-haptics              # no GPIO: HAPTICS log lines show what would be felt
 ```
 
 ## Rules the code enforces (tests in `tests/test_invariants.py` and friends)
@@ -65,7 +66,8 @@ not there. No warranty: see LICENSE.
 
 ## Status
 Stages 0–5 complete. Stage 6 (hardware bring-up) in progress: K-LD7 timing measured, the BNO085 running on
-l02's own SPI transport (gyro ~200 Hz), the field web app, the camera recorder and their systemd services in place. Before riding,
+l02's own SPI transport (gyro ~200 Hz), the field web app, the camera recorder and their systemd services in place. Since
+2026-10-07 there is no MCU: the vibration motors hang off the Pi (`docs/haptics.md`); check them with `tools/haptics_test.py`. Before riding,
 work through `docs/field_testing.md`; open items are in `docs/UNVERIFIED.md`.
 
 ## Licence
